@@ -37,6 +37,10 @@ sources:
     secret_key_env: LANGFUSE_SECRET_KEY
     default_lag: 5m
 
+analyzers:
+  spec_violations:
+    contracts: []
+
 store:
   path: .agentprof/data/agentprof.duckdb
 """
@@ -81,6 +85,23 @@ class SourcesConfig(BaseModel):
     langfuse: LangfuseSourceConfig = Field(default_factory=LangfuseSourceConfig)
 
 
+class SpecContractConfig(BaseModel):
+    name: str
+    span_name: str | None = None
+    required_input_fields: list[str] = Field(default_factory=list)
+    required_output_fields: list[str] = Field(default_factory=list)
+
+
+class SpecViolationAnalyzerConfig(BaseModel):
+    contracts: list[SpecContractConfig] = Field(default_factory=list)
+
+
+class AnalyzersConfig(BaseModel):
+    spec_violations: SpecViolationAnalyzerConfig = Field(
+        default_factory=SpecViolationAnalyzerConfig
+    )
+
+
 class StoreConfig(BaseModel):
     path: Path = DEFAULT_STORE_PATH
 
@@ -89,6 +110,7 @@ class AgentProfConfig(BaseModel):
     project: ProjectConfig = Field(default_factory=ProjectConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
+    analyzers: AnalyzersConfig = Field(default_factory=AnalyzersConfig)
     store: StoreConfig = Field(default_factory=StoreConfig)
 
 

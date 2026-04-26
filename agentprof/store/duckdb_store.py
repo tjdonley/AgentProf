@@ -89,6 +89,7 @@ class NormalizedSpanAnalysisRow:
     error_signature: str | None
     input_retry_fingerprint: str | None
     input_preview: str | None
+    output_preview: str | None
     cost_usd: Decimal | None
     cost_confidence: str
 
@@ -553,7 +554,7 @@ class DuckDBStore:
                        CAST(start_time AS VARCHAR), CAST(end_time AS VARCHAR),
                        status, status_message,
                        error_signature, input_retry_fingerprint, input_preview,
-                       cost_usd, cost_confidence
+                       output_preview, cost_usd, cost_confidence
                 FROM normalized_spans
                 ORDER BY trace_id, parent_span_id, name, start_time, span_id
                 """
@@ -573,8 +574,9 @@ class DuckDBStore:
                 error_signature=row[9],
                 input_retry_fingerprint=row[10],
                 input_preview=row[11],
-                cost_usd=row[12],
-                cost_confidence=row[13],
+                output_preview=row[12],
+                cost_usd=row[13],
+                cost_confidence=row[14],
             )
             for row in rows
         ]

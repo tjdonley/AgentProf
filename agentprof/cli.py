@@ -9,6 +9,7 @@ from rich.table import Table
 
 from agentprof import __version__
 from agentprof.analyze.retry_loop import analyze_retry_loops
+from agentprof.analyze.spec_violation import analyze_spec_violations
 from agentprof.config import (
     APP_DIR,
     APP_SUBDIRS,
@@ -247,6 +248,44 @@ def analyze_retry_loops_command(
     console.print(table)
 
 
+@analyze_app.command("spec-violations")
+def analyze_spec_violations_command() -> None:
+    """Detect spans that violate configured input/output field contracts."""
+
+    config = _load_config_or_exit()
+    store = DuckDBStore(config.store.path)
+    contracts = config.analyzers.spec_violations.contracts
+    result = analyze_spec_violations(store, contracts=contracts)
+
+    console.print("[green]Analyzed spec violations.[/green]")
+    console.print(f"  normalized spans seen: {result.normalized_spans_seen}")
+    console.print(f"  contracts seen: {result.contracts_seen}")
+    console.print(f"  spec violations: {result.spec_violations}")
+    console.print(f"  affected traces: {result.affected_traces}")
+    console.print(f"  affected spans: {result.affected_spans}")
+    console.print(f"  wasted cost: {_format_usd(result.wasted_cost_usd)}")
+    if result.findings:
+        console.print(f"  top spec violation: {result.findings[0].name}")
+
+    table = Table(title="Spec violations")
+    table.add_column("Issue")
+    table.add_column("Trace")
+    table.add_column("Span")
+    table.add_column("Contract")
+    table.add_column("Missing")
+    table.add_column("Cost", justify="right")
+    for finding in result.findings:
+        table.add_row(
+            finding.issue_id,
+            finding.trace_id,
+            finding.span_id,
+            finding.contract_name,
+            _spec_missing_label(finding.missing_input_fields, finding.missing_output_fields),
+            _format_usd(finding.wasted_cost_usd),
+        )
+    console.print(table)
+
+
 @store_app.command("stats")
 def store_stats() -> None:
     """Show local store row counts."""
@@ -336,6 +375,15 @@ def _format_usd(value: Decimal) -> str:
 
 def _cost_type_label(cost_type: str) -> str:
     return cost_type.replace("_", " ").capitalize()
+
+
+def _spec_missing_label(input_fields: list[str], output_fields: list[str]) -> str:
+    parts: list[str] = []
+    if input_fields:
+        parts.append(f"input: {', '.join(input_fields)}")
+    if output_fields:
+        parts.append(f"output: {', '.join(output_fields)}")
+    return "; ".join(parts)
 
 
 if __name__ == "__main__":
