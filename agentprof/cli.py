@@ -21,6 +21,7 @@ from agentprof.ingest.langfuse_export import (
     LangfuseExportImportError,
     import_langfuse_export,
 )
+from agentprof.normalize.runner import normalize_store
 from agentprof.privacy.hashing import MissingSaltError
 from agentprof.store.duckdb_store import DuckDBStore
 
@@ -131,6 +132,38 @@ def doctor() -> None:
         raise typer.Exit(code=2) from exc
 
     console.print("[green]AgentProf workspace looks ready.[/green]")
+
+
+@app.command()
+def normalize(
+    source: str | None = typer.Option(
+        None,
+        "--source",
+        help="Only normalize raw spans from this source, such as langfuse.",
+    ),
+) -> None:
+    """Normalize raw imported spans into AgentProf trace/span tables."""
+
+    config = _load_config_or_exit()
+    store = DuckDBStore(config.store.path)
+    result = normalize_store(store, source=source)
+    quality = result.data_quality
+
+    console.print("[green]Normalized imported spans.[/green]")
+    console.print(f"  raw spans seen: {result.raw_spans_seen}")
+    console.print(f"  normalized spans: {result.normalized_spans}")
+    console.print(f"  normalized traces: {result.normalized_traces}")
+
+    table = Table(title="Data quality")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    table.add_row("Parent coverage", f"{quality.parent_coverage_pct:.1f}%")
+    table.add_row("Status coverage", f"{quality.status_coverage_pct:.1f}%")
+    table.add_row("Cost coverage", f"{quality.cost_coverage_pct:.1f}%")
+    table.add_row("Token coverage", f"{quality.token_coverage_pct:.1f}%")
+    table.add_row("Model coverage", f"{quality.model_coverage_pct:.1f}%")
+    table.add_row("I/O hash coverage", f"{quality.io_hash_coverage_pct:.1f}%")
+    console.print(table)
 
 
 @store_app.command("stats")
