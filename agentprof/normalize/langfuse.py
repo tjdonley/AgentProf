@@ -49,6 +49,15 @@ KNOWN_PAYLOAD_FIELDS = {
     "_agentprof_privacy",
 }
 TRACE_ATTRIBUTE_FIELDS = ("sessionId", "userId", "environment", "version")
+LANGFUSE_TYPE_TO_SPAN_TYPE: dict[str, SpanType] = {
+    "AGENT": "agent",
+    "EMBEDDING": "embedding",
+    "EVAL": "eval",
+    "GENERATION": "llm",
+    "GUARDRAIL": "guardrail",
+    "RETRIEVER": "retriever",
+    "TOOL": "tool",
+}
 
 
 def map_langfuse_raw_span(row: RawSpanRow) -> NormalizedSpan:
@@ -113,14 +122,13 @@ def map_langfuse_raw_span(row: RawSpanRow) -> NormalizedSpan:
 
 
 def classify_langfuse_span(payload: dict[str, Any], parent_span_id: str | None) -> SpanType:
-    if parent_span_id is None:
-        return "root"
-
     observation_type = str(payload.get("type") or "").upper()
     name = str(payload.get("name") or "").lower()
 
-    if observation_type == "GENERATION":
-        return "llm"
+    if observation_type in LANGFUSE_TYPE_TO_SPAN_TYPE:
+        return LANGFUSE_TYPE_TO_SPAN_TYPE[observation_type]
+    if parent_span_id is None:
+        return "root"
     if "retriever" in name or "retrieval" in name:
         return "retriever"
     if "embedding" in name:

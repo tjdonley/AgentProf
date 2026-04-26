@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from agentprof.cli import app
 from agentprof.config import DEFAULT_STORE_PATH
-from agentprof.normalize.langfuse import map_langfuse_raw_span
+from agentprof.normalize.langfuse import classify_langfuse_span, map_langfuse_raw_span
 from agentprof.normalize.runner import (
     build_normalized_traces,
     compute_data_quality,
@@ -85,6 +85,52 @@ def test_map_langfuse_raw_span_preserves_metrics_privacy_and_trace_attributes() 
     assert span.attributes["promptName"] == "refund_flow"
     assert span.attributes["sessionId"] == "session-1"
     assert span.attributes["environment"] == "prod"
+
+
+def test_top_level_langfuse_generation_counts_as_model_call() -> None:
+    span = map_langfuse_raw_span(
+        RawSpanRow(
+            source="langfuse",
+            source_id="generation-1",
+            trace_id="trace-llm-root",
+            span_id="generation-1",
+            parent_span_id=None,
+            payload_json=json.dumps(
+                {
+                    "id": "generation-1",
+                    "traceId": "trace-llm-root",
+                    "type": "GENERATION",
+                    "name": "completion",
+                    "level": "DEFAULT",
+                    "model": "gpt-4o-mini",
+                }
+            ),
+            raw_ref="observations.json",
+        )
+    )
+
+    traces = build_normalized_traces([span])
+
+    assert span.span_type == "llm"
+    assert traces[0].root_span_id == "generation-1"
+    assert traces[0].total_model_calls == 1
+
+
+def test_classify_langfuse_span_uses_observation_types_before_name_heuristics() -> None:
+    cases = {
+        "AGENT": "agent",
+        "TOOL": "tool",
+        "RETRIEVER": "retriever",
+        "EMBEDDING": "embedding",
+        "GUARDRAIL": "guardrail",
+        "EVAL": "eval",
+    }
+
+    for observation_type, span_type in cases.items():
+        assert (
+            classify_langfuse_span({"type": observation_type, "name": "step"}, None)
+            == span_type
+        )
 
 
 def test_build_normalized_traces_rolls_up_tree_metrics_and_outcome() -> None:
