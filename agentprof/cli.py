@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path
 
@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from agentprof import __version__
+from agentprof.analyze.multi_agent_waste import analyze_multi_agent_waste
 from agentprof.analyze.retry_loop import analyze_retry_loops
 from agentprof.analyze.spec_violation import analyze_spec_violations
 from agentprof.config import (
@@ -296,6 +297,74 @@ def analyze_spec_violations_command() -> None:
     console.print(table)
 
 
+@analyze_app.command("multi-agent-waste")
+def analyze_multi_agent_waste_command(
+    baseline_ratio: str = typer.Option(
+        "0.50",
+        "--baseline-ratio",
+        help="Configured single-agent baseline cost ratio, greater than 0 and less than 1.",
+    ),
+    min_agents: int = typer.Option(
+        2,
+        "--min-agents",
+        help="Minimum distinct root/agent actors required to analyze a trace.",
+    ),
+    min_overhead: str = typer.Option(
+        "0",
+        "--min-overhead",
+        help="Minimum estimated orchestration overhead required to emit an issue.",
+    ),
+) -> None:
+    """Estimate multi-agent orchestration overhead against a configured baseline."""
+
+    config = _load_config_or_exit()
+    store = DuckDBStore(config.store.path)
+    try:
+        result = analyze_multi_agent_waste(
+            store,
+            baseline_ratio=_parse_decimal_option(baseline_ratio, "baseline_ratio"),
+            min_agents=min_agents,
+            min_overhead=_parse_decimal_option(min_overhead, "min_overhead"),
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    console.print("[green]Analyzed multi-agent waste.[/green]")
+    console.print(f"  normalized spans seen: {result.normalized_spans_seen}")
+    console.print(f"  multi-agent traces: {result.multi_agent_traces}")
+    console.print(f"  affected traces: {result.affected_traces}")
+    console.print(f"  affected spans: {result.affected_spans}")
+    console.print(
+        "  estimated orchestration overhead: "
+        f"{_format_usd(result.estimated_overhead_usd)}"
+    )
+    if result.findings:
+        console.print(
+            f"  top multi-agent trace: {result.findings[0].root_name or result.findings[0].trace_id}"
+        )
+
+    table = Table(title="Multi-agent waste")
+    table.add_column("Issue")
+    table.add_column("Trace")
+    table.add_column("Agents", justify="right")
+    table.add_column("Actual", justify="right")
+    table.add_column("Baseline", justify="right")
+    table.add_column("Overhead", justify="right")
+    table.add_column("Multiple", justify="right")
+    for finding in result.findings:
+        table.add_row(
+            finding.issue_id,
+            finding.trace_id,
+            str(finding.agent_count),
+            _format_usd(finding.actual_cost_usd),
+            _format_usd(finding.baseline_cost_usd),
+            _format_usd(finding.estimated_overhead_usd),
+            f"{finding.cost_multiple:.2f}x",
+        )
+    console.print(table)
+
+
 @report_app.command("generate")
 def report_generate(
     output_dir: Path = typer.Option(
@@ -488,6 +557,13 @@ def _spec_missing_label(input_fields: list[str], output_fields: list[str]) -> st
     if output_fields:
         parts.append(f"output: {', '.join(output_fields)}")
     return "; ".join(parts)
+
+
+def _parse_decimal_option(value: str, name: str) -> Decimal:
+    try:
+        return Decimal(value)
+    except InvalidOperation as exc:
+        raise ValueError(f"{name} must be a decimal value") from exc
 
 
 def _report_artifact_path(report, output_format: ReportShowFormat) -> Path | None:

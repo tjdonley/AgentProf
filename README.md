@@ -51,6 +51,7 @@ AGENTPROF_HASH_SALT=dev-salt uv run agentprof import langfuse-export \
 uv run agentprof normalize
 uv run agentprof analyze retry-loops
 uv run agentprof analyze spec-violations
+uv run agentprof analyze multi-agent-waste
 uv run agentprof cost ledger
 uv run agentprof report generate
 uv run agentprof report list
@@ -117,7 +118,15 @@ uv run agentprof analyze spec-violations
 
 This writes `spec_violation` issues, issue evidence, and wasted spec-violation costs when spans violate required input or output fields configured in `agentprof.yml`.
 
-7. Build the cost ledger.
+7. Estimate multi-agent orchestration overhead.
+
+```bash
+uv run agentprof analyze multi-agent-waste
+```
+
+This writes `multi_agent_waste` issues, issue evidence, and estimated orchestration overhead costs when a costed trace has multiple distinct root/agent actors. The estimate uses a configured single-agent baseline ratio, which defaults to `0.50` and can be changed with `--baseline-ratio`.
+
+8. Build the cost ledger.
 
 ```bash
 uv run agentprof cost ledger
@@ -125,7 +134,7 @@ uv run agentprof cost ledger
 
 This replaces the current normalized-span cost ledger entries idempotently and prints a waterfall grouped by span status.
 
-8. Generate a local report.
+9. Generate a local report.
 
 ```bash
 uv run agentprof report generate
@@ -133,7 +142,7 @@ uv run agentprof report generate
 
 This writes Markdown and JSON report files under `.agentprof/reports/` and stores report metadata in the `reports` table.
 
-9. List or inspect generated reports.
+10. List or inspect generated reports.
 
 ```bash
 uv run agentprof report list
@@ -143,7 +152,7 @@ uv run agentprof report show latest --format json
 
 Use a stable `--report-id` when generating reports if you want a predictable ID such as `latest`.
 
-10. Inspect store row counts.
+11. Inspect store row counts.
 
 ```bash
 uv run agentprof store stats
@@ -160,6 +169,7 @@ uv run agentprof store stats
 | `agentprof normalize` | Normalize raw imported spans into canonical trace/span tables. |
 | `agentprof analyze retry-loops` | Detect repeated failing calls with the same retry fingerprint. |
 | `agentprof analyze spec-violations` | Detect spans that violate configured required field contracts. |
+| `agentprof analyze multi-agent-waste` | Estimate multi-agent orchestration overhead against a configured single-agent baseline. |
 | `agentprof cost ledger` | Build `cost_ledger` from normalized span costs and print a waterfall. |
 | `agentprof report generate` | Generate Markdown and JSON reports from persisted analysis results. |
 | `agentprof report list` | List generated reports recorded in the local store. |
@@ -285,6 +295,7 @@ AGENTPROF_HASH_SALT=dev-salt uv run agentprof import langfuse-export \
 uv run agentprof normalize
 uv run agentprof analyze retry-loops
 uv run agentprof analyze spec-violations
+uv run agentprof analyze multi-agent-waste
 uv run agentprof cost ledger
 uv run agentprof report generate
 uv run agentprof report list

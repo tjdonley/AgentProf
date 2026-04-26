@@ -55,3 +55,29 @@ class SpecViolationAnalysisResult(BaseModel):
     affected_spans: int
     wasted_cost_usd: Decimal = Field(default=Decimal("0"))
     findings: list[SpecViolationFinding] = Field(default_factory=list)
+
+
+class MultiAgentWasteFinding(BaseModel):
+    issue_id: str
+    trace_id: str
+    root_span_id: str | None = None
+    root_name: str | None = None
+    agent_count: int
+    agent_names: list[str] = Field(default_factory=list)
+    handoff_span_ids: list[str] = Field(default_factory=list)
+    first_seen: datetime | None = None
+    last_seen: datetime | None = None
+    actual_cost_usd: Decimal = Field(default=Decimal("0"))
+    baseline_cost_usd: Decimal = Field(default=Decimal("0"))
+    estimated_overhead_usd: Decimal = Field(default=Decimal("0"))
+    cost_multiple: Decimal = Field(default=Decimal("0"))
+    baseline_ratio: Decimal = Field(default=Decimal("0.50"))
+
+
+class MultiAgentWasteAnalysisResult(BaseModel):
+    normalized_spans_seen: int
+    multi_agent_traces: int
+    affected_traces: int
+    affected_spans: int
+    estimated_overhead_usd: Decimal = Field(default=Decimal("0"))
+    findings: list[MultiAgentWasteFinding] = Field(default_factory=list)
