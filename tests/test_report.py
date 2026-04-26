@@ -63,6 +63,61 @@ def test_generate_report_writes_markdown_json_and_store_row(tmp_path: Path) -> N
     assert store.stats()["reports"] == 1
 
 
+def test_generate_report_writes_multi_agent_waste_svg_when_present(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    _seed_multi_agent_issue(store)
+
+    result = generate_report(
+        store,
+        project="tracer",
+        output_dir=tmp_path / "reports",
+        report_id="multi-agent-report",
+        generated_at=_dt("2026-04-26T12:00:00+00:00"),
+    )
+    svg_path = tmp_path / "reports" / "multi-agent-report-multi-agent-waste.svg"
+    payload = json.loads(result.report_json_path.read_text(encoding="utf-8"))
+    markdown = result.report_md_path.read_text(encoding="utf-8")
+    svg = svg_path.read_text(encoding="utf-8")
+
+    assert svg_path.is_file()
+    assert payload["summary"]["artifacts"] == {
+        "multi_agent_waste_svg": "multi-agent-report-multi-agent-waste.svg"
+    }
+    assert (
+        "![Multi-agent waste estimate](multi-agent-report-multi-agent-waste.svg)"
+        in markdown
+    )
+    assert "Multi-Agent Waste Estimate" in svg
+    assert "$0.084000000" in svg
+    assert "$0.042000000" in svg
+    assert "2.00x" in svg
+    assert "3: triage_agent, research_agent..." in svg
+    assert "Basis: configurable estimate" in svg
+
+
+def test_generate_report_skips_multi_agent_waste_svg_when_absent(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    _seed_retry_issue(store)
+
+    result = generate_report(
+        store,
+        project="tracer",
+        output_dir=tmp_path / "reports",
+        report_id="retry-report",
+        generated_at=_dt("2026-04-26T12:00:00+00:00"),
+    )
+    payload = json.loads(result.report_json_path.read_text(encoding="utf-8"))
+    markdown = result.report_md_path.read_text(encoding="utf-8")
+
+    assert not (tmp_path / "reports" / "retry-report-multi-agent-waste.svg").exists()
+    assert payload["summary"]["artifacts"] == {}
+    assert "![Multi-agent waste estimate]" not in markdown
+
+
 def test_generate_report_upserts_existing_report_id(tmp_path: Path) -> None:
     store = DuckDBStore(tmp_path / "agentprof.duckdb")
     _seed_retry_issue(store)
@@ -282,6 +337,58 @@ def _seed_retry_issue(store: DuckDBStore) -> None:
     store.replace_analysis_results(
         issue_kind="retry_loop",
         attribution_method="retry_loop",
+        issues=[issue],
+        evidence=[evidence],
+        cost_records=[cost],
+    )
+
+
+def _seed_multi_agent_issue(store: DuckDBStore) -> None:
+    issue = IssueRecord(
+        issue_id="multi_agent_waste:test",
+        kind="multi_agent_waste",
+        title="Estimated orchestration overhead in triage_agent",
+        severity="medium",
+        confidence="medium",
+        first_seen=_dt("2026-04-26T11:00:00+00:00"),
+        last_seen=_dt("2026-04-26T11:00:08+00:00"),
+        affected_traces=1,
+        affected_spans=5,
+        total_cost_usd=Decimal("0.084"),
+        wasted_cost_usd=Decimal("0.042"),
+        potential_savings_usd=Decimal("0.042"),
+        recommendation="Compare this trace with a configured single-agent baseline.",
+        recommended_tests=["Add a baseline eval for this workflow."],
+    )
+    evidence = IssueEvidenceRecord(
+        issue_id=issue.issue_id,
+        trace_id="trace-multi-agent-1",
+        span_id="ma-root-1",
+        evidence_type="multi_agent_waste",
+        message="Trace used 3 distinct agents.",
+        attributes={
+            "basis": "configured_ratio_estimate",
+            "agent_count": 3,
+            "agent_names": ["triage_agent", "research_agent", "policy_agent"],
+            "actual_cost_usd": "0.084",
+            "baseline_cost_usd": "0.042",
+            "estimated_overhead_usd": "0.042",
+            "cost_multiple": "2",
+            "baseline_ratio": "0.50",
+        },
+    )
+    cost = CostLedgerRecord(
+        trace_id="trace-multi-agent-1",
+        span_id="ma-root-1",
+        issue_id=issue.issue_id,
+        cost_type="estimated_multi_agent_overhead",
+        amount_usd=Decimal("0.042"),
+        attribution_method="multi_agent_waste",
+        confidence="estimated",
+    )
+    store.replace_analysis_results(
+        issue_kind="multi_agent_waste",
+        attribution_method="multi_agent_waste",
         issues=[issue],
         evidence=[evidence],
         cost_records=[cost],

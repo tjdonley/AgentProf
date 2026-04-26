@@ -274,6 +274,8 @@ uv run agentprof report generate \
 
 Report JSON contains a machine-readable summary, issue details with evidence, and cost ledger entries. Report Markdown contains the same information in a local-first shareable format.
 
+When persisted `multi_agent_waste` issues exist, `agentprof report generate` also writes `<report-id>-multi-agent-waste.svg` next to the Markdown/JSON files, embeds it in the Markdown report, and records the artifact filename in `summary.artifacts.multi_agent_waste_svg`.
+
 List and inspect generated reports:
 
 ```bash
