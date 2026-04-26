@@ -35,6 +35,30 @@ def test_redact_text_removes_common_sensitive_values() -> None:
     assert "[URL_WITH_QUERY_REDACTED]" in redacted
 
 
+def test_redact_text_removes_full_authorization_header() -> None:
+    redacted = redact_text("Authorization: Bearer verysecretvalue12345")
+
+    assert redacted == "[SECRET]"
+    assert "Bearer" not in redacted
+    assert "verysecretvalue12345" not in redacted
+
+
+def test_redact_value_redacts_sensitive_mapping_keys() -> None:
+    redacted = redact_value(
+        {
+            "Authorization": "Bearer verysecretvalue12345",
+            "headers": {"api-key": "secret-key-value"},
+            "token_usage": 42,
+        }
+    )
+
+    assert redacted == {
+        "Authorization": "[SECRET]",
+        "headers": {"api-key": "[SECRET]"},
+        "token_usage": 42,
+    }
+
+
 def test_redact_text_supports_custom_patterns() -> None:
     rules = RedactionRules(
         custom_patterns=(

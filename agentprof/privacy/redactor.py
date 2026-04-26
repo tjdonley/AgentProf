@@ -14,9 +14,26 @@ PHONE_RE = re.compile(
 CREDIT_CARD_RE = re.compile(r"\b(?:\d[ -]*?){13,19}\b")
 JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
 URL_WITH_QUERY_RE = re.compile(r"https?://[^\s?#)\]}'\"]+\?[^\s)\]}'\"]+")
+AUTHORIZATION_RE = re.compile(
+    r"(?i)\bauthorization\s*[:=]\s*['\"]?"
+    r"(?:bearer|basic|digest|token|api[-_]?key)?\s*[^'\"\s,}]+"
+)
 API_KEY_RE = re.compile(
-    r"(?i)\b(?:api[_-]?key|secret|token|authorization)\s*[:=]\s*['\"]?[^'\"\s,}]+"
+    r"(?i)\b(?:api[_-]?key|secret|token)\s*[:=]\s*['\"]?[^'\"\s,}]+"
     r"|\b(?:sk|pk|rk|key|secret)[-_][A-Za-z0-9_-]{16,}\b"
+)
+SENSITIVE_MAPPING_KEYS = frozenset(
+    {
+        "access_token",
+        "api_key",
+        "authorization",
+        "auth_token",
+        "bearer_token",
+        "refresh_token",
+        "secret",
+        "secret_key",
+        "token",
+    }
 )
 
 
@@ -46,6 +63,7 @@ def redact_text(text: str, rules: RedactionRules = DEFAULT_REDACTION_RULES) -> s
         redacted = JWT_RE.sub("[JWT]", redacted)
     redacted = URL_WITH_QUERY_RE.sub("[URL_WITH_QUERY_REDACTED]", redacted)
     if rules.api_keys:
+        redacted = AUTHORIZATION_RE.sub("[SECRET]", redacted)
         redacted = API_KEY_RE.sub("[SECRET]", redacted)
     if rules.emails:
         redacted = EMAIL_RE.sub("[EMAIL]", redacted)
@@ -84,7 +102,14 @@ def redact_value(value: Any, rules: RedactionRules = DEFAULT_REDACTION_RULES) ->
         return redact_text(value.decode("utf-8", errors="replace"), rules)
 
     if isinstance(value, Mapping):
-        return {key: redact_value(item, rules) for key, item in value.items()}
+        return {
+            key: (
+                "[SECRET]"
+                if _is_sensitive_mapping_key(key)
+                else redact_value(item, rules)
+            )
+            for key, item in value.items()
+        }
 
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return [redact_value(item, rules) for item in value]
@@ -118,6 +143,11 @@ def evidence_preview(
 def _custom_label(name: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper()
     return f"[{normalized or 'REDACTED'}]"
+
+
+def _is_sensitive_mapping_key(key: Any) -> bool:
+    normalized = str(key).strip().lower().replace("-", "_").replace(".", "_")
+    return normalized in SENSITIVE_MAPPING_KEYS
 
 
 def _redact_credit_card_match(match: re.Match[str]) -> str:

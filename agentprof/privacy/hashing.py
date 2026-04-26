@@ -133,7 +133,7 @@ def _normalize_text(value: str, *, strip_volatile: bool) -> str:
 
 def _try_parse_json(value: str) -> Any | None:
     value = value.strip()
-    if not value or value[0] not in "[{\"":
+    if not value or value[0] not in "[{":
         return None
     try:
         return json.loads(value)

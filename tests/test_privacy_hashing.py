@@ -30,6 +30,14 @@ def test_canonical_json_ignores_key_order() -> None:
     assert left == right
 
 
+def test_canonical_json_preserves_quoted_string_payloads() -> None:
+    raw_text = canonicalize_for_hash("hello")
+    json_encoded_text = canonicalize_for_hash('"hello"')
+
+    assert raw_text != json_encoded_text
+    assert content_hash("hello", "salt") != content_hash('"hello"', "salt")
+
+
 def test_retry_fingerprint_strips_volatile_keys_and_values() -> None:
     first = {
         "tool": "refund_policy_lookup",
