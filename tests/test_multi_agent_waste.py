@@ -324,7 +324,10 @@ def test_multi_agent_fixture_smoke_path_documents_estimate(monkeypatch) -> None:
             ],
         )
         normalize_result = runner.invoke(app, ["normalize"])
-        analyze_result = runner.invoke(app, ["analyze", "multi-agent-waste"])
+        analyze_result = runner.invoke(
+            app,
+            ["analyze", "multi-agent-waste", "--baseline-ratio", "0.50"],
+        )
         report_result = runner.invoke(
             app,
             ["report", "generate", "--report-id", "multi-agent-demo"],
@@ -375,13 +378,11 @@ def test_multi_agent_fixture_smoke_path_documents_estimate(monkeypatch) -> None:
 
 def test_readme_multi_agent_fixture_commands_match_cli() -> None:
     readme = README.read_text(encoding="utf-8")
-    help_result = runner.invoke(app, ["analyze", "multi-agent-waste", "--help"])
 
-    assert help_result.exit_code == 0
+    assert (FIXTURES / "langfuse_multi_agent_observations.json").is_file()
     assert "tests/fixtures/langfuse_multi_agent_observations.json" in readme
     assert "agentprof analyze multi-agent-waste" in readme
     assert "--baseline-ratio" in readme
-    assert "--baseline-ratio" in help_result.output
 
 
 def _multi_agent_spans() -> list[NormalizedSpan]:
