@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 import duckdb
 
@@ -25,6 +26,17 @@ class Migration:
     version: int
     name: str
     sql: str
+
+
+@dataclass(frozen=True)
+class RawSpanRecord:
+    source: str
+    source_id: str
+    trace_id: str | None
+    span_id: str | None
+    parent_span_id: str | None
+    payload_json: str
+    raw_ref: str | None = None
 
 
 MIGRATIONS = (
@@ -213,6 +225,47 @@ class DuckDBStore:
             if path.exists():
                 path.unlink()
         self.ensure_schema()
+
+    def insert_raw_spans(self, records: Sequence[RawSpanRecord]) -> int:
+        if not records:
+            return 0
+
+        self.ensure_schema()
+        with self.connect() as connection:
+            connection.execute("BEGIN TRANSACTION")
+            try:
+                for record in records:
+                    connection.execute(
+                        "DELETE FROM raw_spans WHERE source = ? AND source_id = ?",
+                        [record.source, record.source_id],
+                    )
+                    connection.execute(
+                        """
+                        INSERT INTO raw_spans (
+                            source,
+                            source_id,
+                            trace_id,
+                            span_id,
+                            parent_span_id,
+                            payload_json,
+                            raw_ref
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            record.source,
+                            record.source_id,
+                            record.trace_id,
+                            record.span_id,
+                            record.parent_span_id,
+                            record.payload_json,
+                            record.raw_ref,
+                        ],
+                    )
+                connection.execute("COMMIT")
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+        return len(records)
 
     def stats(self) -> dict[str, int]:
         self.ensure_schema()

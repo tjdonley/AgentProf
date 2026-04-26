@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -14,6 +16,12 @@ from agentprof.config import (
     load_config,
     write_default_config,
 )
+from agentprof.ingest.langfuse_export import (
+    LangfuseExportFormat,
+    LangfuseExportImportError,
+    import_langfuse_export,
+)
+from agentprof.privacy.hashing import MissingSaltError
 from agentprof.store.duckdb_store import DuckDBStore
 
 console = Console()
@@ -23,7 +31,9 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 store_app = typer.Typer(help="Manage the local AgentProf DuckDB store.")
+import_app = typer.Typer(help="Import trace data into the local AgentProf store.")
 app.add_typer(store_app, name="store")
+app.add_typer(import_app, name="import")
 
 
 def _version_callback(value: bool) -> None:
@@ -159,6 +169,51 @@ def store_reset(
 
     DuckDBStore(config.store.path).reset()
     console.print(f"[green]Reset local store at {config.store.path}.[/green]")
+
+
+@import_app.command("langfuse-export")
+def import_langfuse_export_command(
+    observations: Path = typer.Option(
+        ...,
+        "--observations",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        help="Path to a Langfuse observations JSON or CSV export.",
+    ),
+    file_format: LangfuseExportFormat = typer.Option(
+        LangfuseExportFormat.auto,
+        "--format",
+        help="Observation export format. Defaults to extension-based detection.",
+    ),
+) -> None:
+    """Import a Langfuse observations export."""
+
+    config = _load_config_or_exit()
+    store = DuckDBStore(config.store.path)
+    try:
+        result = import_langfuse_export(
+            observations_path=observations,
+            store=store,
+            config=config,
+            file_format=file_format,
+        )
+    except MissingSaltError as exc:
+        console.print("[red]Cannot hash Langfuse I/O without a configured salt.[/red]")
+        console.print(
+            f"Set `{config.privacy.hmac_salt_env}` or disable `privacy.hash_inputs`."
+        )
+        raise typer.Exit(code=2) from exc
+    except LangfuseExportImportError as exc:
+        console.print("[red]Could not import Langfuse export.[/red]")
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+
+    console.print("[green]Imported Langfuse observations.[/green]")
+    console.print(f"  observations seen: {result.observations_seen}")
+    console.print(f"  observations imported: {result.observations_imported}")
+    console.print(f"  source: {result.raw_ref}")
 
 
 if __name__ == "__main__":

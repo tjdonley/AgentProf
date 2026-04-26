@@ -1,0 +1,44 @@
+[
+  {
+    "id": "obs-root-1",
+    "traceId": "trace-retry-1",
+    "parentObservationId": null,
+    "type": "SPAN",
+    "name": "support_agent",
+    "startTime": "2026-04-26T10:00:00.000Z",
+    "endTime": "2026-04-26T10:00:04.000Z",
+    "input": "Customer user@example.com requested a refund. Authorization: Bearer verysecretvalue12345",
+    "output": "Routing to refund_policy_lookup for cust_ABC123",
+    "metadata": {
+      "Authorization": "Bearer nestedsecretvalue12345"
+    },
+    "level": "DEFAULT",
+    "statusMessage": ""
+  },
+  {
+    "id": "obs-tool-1",
+    "traceId": "trace-retry-1",
+    "parentObservationId": "obs-root-1",
+    "type": "SPAN",
+    "name": "refund_policy_lookup",
+    "startTime": "2026-04-26T10:00:01.000Z",
+    "endTime": "2026-04-26T10:00:02.000Z",
+    "input": "{\"customer_id\": \"cust_ABC123\", \"reason\": \"refund\"}",
+    "output": "missing required field region",
+    "level": "ERROR",
+    "statusMessage": "missing required field region"
+  },
+  {
+    "id": "obs-tool-2",
+    "traceId": "trace-retry-1",
+    "parentObservationId": "obs-root-1",
+    "type": "SPAN",
+    "name": "refund_policy_lookup",
+    "startTime": "2026-04-26T10:00:02.000Z",
+    "endTime": "2026-04-26T10:00:03.000Z",
+    "input": "{\"customer_id\": \"cust_ABC123\", \"reason\": \"refund\"}",
+    "output": "missing required field region",
+    "level": "ERROR",
+    "statusMessage": "missing required field region"
+  }
+]
