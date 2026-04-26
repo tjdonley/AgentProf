@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import duckdb
 
@@ -71,6 +73,52 @@ class CostLedgerRecord:
     amount_usd: Decimal | None
     attribution_method: str
     confidence: str
+
+
+@dataclass(frozen=True)
+class NormalizedSpanAnalysisRow:
+    trace_id: str
+    span_id: str
+    parent_span_id: str | None
+    name: str
+    span_type: str
+    start_time: datetime | None
+    end_time: datetime | None
+    status: str
+    status_message: str | None
+    error_signature: str | None
+    input_retry_fingerprint: str | None
+    input_preview: str | None
+    cost_usd: Decimal | None
+    cost_confidence: str
+
+
+@dataclass(frozen=True)
+class IssueRecord:
+    issue_id: str
+    kind: str
+    title: str
+    severity: str
+    confidence: str
+    first_seen: datetime | None
+    last_seen: datetime | None
+    affected_traces: int
+    affected_spans: int
+    total_cost_usd: Decimal | None
+    wasted_cost_usd: Decimal | None
+    potential_savings_usd: Decimal | None
+    recommendation: str
+    recommended_tests: list[str]
+
+
+@dataclass(frozen=True)
+class IssueEvidenceRecord:
+    issue_id: str
+    trace_id: str | None
+    span_id: str | None
+    evidence_type: str
+    message: str
+    attributes: dict[str, Any]
 
 
 MIGRATIONS = (
@@ -496,6 +544,41 @@ class DuckDBStore:
 
         return [NormalizedSpanCostRow(*row) for row in rows]
 
+    def fetch_normalized_spans_for_analysis(self) -> list[NormalizedSpanAnalysisRow]:
+        self.ensure_schema()
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT trace_id, span_id, parent_span_id, name, span_type,
+                       CAST(start_time AS VARCHAR), CAST(end_time AS VARCHAR),
+                       status, status_message,
+                       error_signature, input_retry_fingerprint, input_preview,
+                       cost_usd, cost_confidence
+                FROM normalized_spans
+                ORDER BY trace_id, parent_span_id, name, start_time, span_id
+                """
+            ).fetchall()
+
+        return [
+            NormalizedSpanAnalysisRow(
+                trace_id=row[0],
+                span_id=row[1],
+                parent_span_id=row[2],
+                name=row[3],
+                span_type=row[4],
+                start_time=_datetime_from_store(row[5]),
+                end_time=_datetime_from_store(row[6]),
+                status=row[7],
+                status_message=row[8],
+                error_signature=row[9],
+                input_retry_fingerprint=row[10],
+                input_preview=row[11],
+                cost_usd=row[12],
+                cost_confidence=row[13],
+            )
+            for row in rows
+        ]
+
     def replace_cost_ledger(
         self,
         records: Sequence[CostLedgerRecord],
@@ -561,6 +644,209 @@ class DuckDBStore:
 
         return [CostLedgerRecord(*row) for row in rows]
 
+    def replace_analysis_results(
+        self,
+        *,
+        issue_kind: str,
+        attribution_method: str,
+        issues: Sequence[IssueRecord],
+        evidence: Sequence[IssueEvidenceRecord],
+        cost_records: Sequence[CostLedgerRecord],
+    ) -> None:
+        if any(issue.kind != issue_kind for issue in issues):
+            raise ValueError("Issues must match the replacement kind.")
+        if any(record.attribution_method != attribution_method for record in cost_records):
+            raise ValueError("Cost ledger records must match the replacement method.")
+
+        issue_ids = {issue.issue_id for issue in issues}
+        if any(item.issue_id not in issue_ids for item in evidence):
+            raise ValueError("Issue evidence must reference replacement issues.")
+        if any(record.issue_id and record.issue_id not in issue_ids for record in cost_records):
+            raise ValueError("Cost ledger issue IDs must reference replacement issues.")
+
+        self.ensure_schema()
+        with self.connect() as connection:
+            connection.execute("BEGIN TRANSACTION")
+            try:
+                existing_issue_ids = [
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT issue_id FROM issues WHERE kind = ?",
+                        [issue_kind],
+                    ).fetchall()
+                ]
+                for issue_id in existing_issue_ids:
+                    connection.execute(
+                        "DELETE FROM issue_evidence WHERE issue_id = ?",
+                        [issue_id],
+                    )
+                connection.execute("DELETE FROM issues WHERE kind = ?", [issue_kind])
+                connection.execute(
+                    "DELETE FROM cost_ledger WHERE attribution_method = ?",
+                    [attribution_method],
+                )
+
+                for issue in issues:
+                    connection.execute(
+                        """
+                        INSERT INTO issues (
+                            issue_id,
+                            kind,
+                            title,
+                            severity,
+                            confidence,
+                            first_seen,
+                            last_seen,
+                            affected_traces,
+                            affected_spans,
+                            total_cost_usd,
+                            wasted_cost_usd,
+                            potential_savings_usd,
+                            recommendation,
+                            recommended_tests_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            issue.issue_id,
+                            issue.kind,
+                            issue.title,
+                            issue.severity,
+                            issue.confidence,
+                            issue.first_seen,
+                            issue.last_seen,
+                            issue.affected_traces,
+                            issue.affected_spans,
+                            issue.total_cost_usd,
+                            issue.wasted_cost_usd,
+                            issue.potential_savings_usd,
+                            issue.recommendation,
+                            json.dumps(issue.recommended_tests, ensure_ascii=True),
+                        ],
+                    )
+
+                for item in evidence:
+                    connection.execute(
+                        """
+                        INSERT INTO issue_evidence (
+                            issue_id,
+                            trace_id,
+                            span_id,
+                            evidence_type,
+                            message,
+                            attributes_json
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            item.issue_id,
+                            item.trace_id,
+                            item.span_id,
+                            item.evidence_type,
+                            item.message,
+                            json.dumps(
+                                item.attributes,
+                                ensure_ascii=True,
+                                sort_keys=True,
+                                default=str,
+                            ),
+                        ],
+                    )
+
+                for record in cost_records:
+                    connection.execute(
+                        """
+                        INSERT INTO cost_ledger (
+                            trace_id,
+                            span_id,
+                            issue_id,
+                            cost_type,
+                            amount_usd,
+                            attribution_method,
+                            confidence
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            record.trace_id,
+                            record.span_id,
+                            record.issue_id,
+                            record.cost_type,
+                            record.amount_usd,
+                            record.attribution_method,
+                            record.confidence,
+                        ],
+                    )
+
+                connection.execute("COMMIT")
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+
+    def fetch_issues(self, *, kind: str | None = None) -> list[IssueRecord]:
+        self.ensure_schema()
+        query = """
+            SELECT issue_id, kind, title, severity, confidence,
+                   CAST(first_seen AS VARCHAR), CAST(last_seen AS VARCHAR),
+                   affected_traces, affected_spans, total_cost_usd, wasted_cost_usd,
+                   potential_savings_usd, recommendation, recommended_tests_json
+            FROM issues
+        """
+        params: list[str] = []
+        if kind:
+            query += " WHERE kind = ?"
+            params.append(kind)
+        query += " ORDER BY issue_id"
+
+        with self.connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+
+        return [
+            IssueRecord(
+                issue_id=row[0],
+                kind=row[1],
+                title=row[2],
+                severity=row[3],
+                confidence=row[4],
+                first_seen=_datetime_from_store(row[5]),
+                last_seen=_datetime_from_store(row[6]),
+                affected_traces=row[7],
+                affected_spans=row[8],
+                total_cost_usd=row[9],
+                wasted_cost_usd=row[10],
+                potential_savings_usd=row[11],
+                recommendation=row[12],
+                recommended_tests=json.loads(row[13]),
+            )
+            for row in rows
+        ]
+
+    def fetch_issue_evidence(
+        self, *, issue_id: str | None = None
+    ) -> list[IssueEvidenceRecord]:
+        self.ensure_schema()
+        query = """
+            SELECT issue_id, trace_id, span_id, evidence_type, message, attributes_json
+            FROM issue_evidence
+        """
+        params: list[str] = []
+        if issue_id:
+            query += " WHERE issue_id = ?"
+            params.append(issue_id)
+        query += " ORDER BY issue_id, trace_id, span_id, evidence_type"
+
+        with self.connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+
+        return [
+            IssueEvidenceRecord(
+                issue_id=row[0],
+                trace_id=row[1],
+                span_id=row[2],
+                evidence_type=row[3],
+                message=row[4],
+                attributes=json.loads(row[5]),
+            )
+            for row in rows
+        ]
+
     def stats(self) -> dict[str, int]:
         self.ensure_schema()
         with self.connect() as connection:
@@ -577,3 +863,19 @@ class DuckDBStore:
             return connection.execute(
                 "SELECT version, name FROM schema_migrations ORDER BY version"
             ).fetchall()
+
+
+def _datetime_from_store(value) -> datetime | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    text = re.sub(r"([+-]\d{2})$", r"\1:00", text)
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
