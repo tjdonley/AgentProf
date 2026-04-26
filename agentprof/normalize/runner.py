@@ -54,8 +54,8 @@ def build_normalized_traces(spans: list[NormalizedSpan]) -> list[NormalizedTrace
                 source=trace_spans[0].source,
                 root_span_id=root.span_id if root else None,
                 root_name=root.name if root else None,
-                session_id=_first_attribute(trace_spans, "sessionId"),
-                user_hash=_first_attribute(trace_spans, "userId"),
+                session_id=_first_span_value(trace_spans, "session_id"),
+                user_hash=_first_span_value(trace_spans, "user_hash"),
                 environment=_first_attribute(trace_spans, "environment"),
                 version=_first_attribute(trace_spans, "version"),
                 start_time=start_time,
@@ -165,6 +165,14 @@ def _trace_root(
 def _first_attribute(spans: list[NormalizedSpan], key: str) -> str | None:
     for span in spans:
         value = span.attributes.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return None
+
+
+def _first_span_value(spans: list[NormalizedSpan], name: str) -> str | None:
+    for span in spans:
+        value = getattr(span, name)
         if value not in (None, ""):
             return str(value)
     return None

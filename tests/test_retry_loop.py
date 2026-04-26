@@ -217,7 +217,7 @@ def test_analyze_retry_loops_requires_min_attempts_at_least_two(
 
 
 def test_cli_retry_loop_analyzer_detects_fixture(monkeypatch) -> None:
-    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt")
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt-value-123")
     with runner.isolated_filesystem():
         init_result = runner.invoke(app, ["init"])
         import_result = runner.invoke(

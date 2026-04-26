@@ -60,8 +60,9 @@ Run the built-in Langfuse fixture through the current end-to-end workflow:
 ```bash
 uv sync
 uv run agentprof init
+export AGENTPROF_HASH_SALT='dev-salt-value-at-least-16-bytes'
 uv run agentprof doctor
-AGENTPROF_HASH_SALT=dev-salt uv run agentprof import langfuse-export \
+uv run agentprof import langfuse-export \
   --observations tests/fixtures/langfuse_observations.json
 uv run agentprof normalize
 uv run agentprof analyze retry-loops
@@ -85,7 +86,7 @@ The workflow creates local files only. After `agentprof report generate`, the de
 uv run agentprof init
 ```
 
-This creates `agentprof.yml`, local workspace directories under `.agentprof/`, and the DuckDB store at `.agentprof/data/agentprof.duckdb`.
+This creates `agentprof.yml`, local workspace directories under `.agentprof/`, `.agentprof/.gitignore`, and the DuckDB store at `.agentprof/data/agentprof.duckdb`.
 
 2. Configure privacy.
 
@@ -95,7 +96,7 @@ By default, `agentprof.yml` sets `privacy.hash_inputs: true`, so imports that co
 export AGENTPROF_HASH_SALT='replace-with-a-stable-secret-for-this-project'
 ```
 
-Use a stable per-project salt if you want hashes to remain comparable across repeated imports. Do not commit the salt.
+Use a stable per-project salt of at least 16 bytes if you want hashes to remain comparable across repeated imports. Do not commit the salt.
 
 3. Import a Langfuse observations export.
 
@@ -181,7 +182,7 @@ The costed multi-agent fixture shows the current baseline-estimate story without
 
 ```bash
 uv run agentprof store reset --yes
-AGENTPROF_HASH_SALT=dev-salt uv run agentprof import langfuse-export \
+AGENTPROF_HASH_SALT=dev-salt-value-at-least-16-bytes uv run agentprof import langfuse-export \
   --observations tests/fixtures/langfuse_multi_agent_observations.json
 uv run agentprof normalize
 uv run agentprof analyze multi-agent-waste --baseline-ratio 0.50
@@ -370,7 +371,7 @@ Useful local smoke workflow:
 
 ```bash
 uv run agentprof store reset --yes
-AGENTPROF_HASH_SALT=dev-salt uv run agentprof import langfuse-export \
+AGENTPROF_HASH_SALT=dev-salt-value-at-least-16-bytes uv run agentprof import langfuse-export \
   --observations tests/fixtures/langfuse_observations.json
 uv run agentprof normalize
 uv run agentprof analyze retry-loops

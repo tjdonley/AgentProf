@@ -23,6 +23,7 @@ from agentprof.config import (
     AgentProfConfig,
     ensure_workspace_dirs,
     load_config,
+    write_workspace_gitignore,
     write_default_config,
 )
 from agentprof.cost.runner import build_cost_ledger
@@ -32,7 +33,7 @@ from agentprof.ingest.langfuse_export import (
     import_langfuse_export,
 )
 from agentprof.normalize.runner import normalize_store
-from agentprof.privacy.hashing import MissingSaltError
+from agentprof.privacy.hashing import MissingSaltError, salt_from_env
 from agentprof.report.runner import DEFAULT_REPORT_DIR, generate_report, validate_report_id
 from agentprof.store.duckdb_store import DuckDBStore
 
@@ -48,6 +49,7 @@ class MultiAgentBaselineMode(StrEnum):
 
 
 console = Console()
+error_console = Console(stderr=True)
 REPORT_SHOW_MAX_BYTES = 1_048_576
 REPORT_SHOW_CHUNK_SIZE = 64 * 1024
 app = typer.Typer(
@@ -75,7 +77,7 @@ def _version_callback(value: bool) -> None:
 
 def _load_config_or_exit() -> AgentProfConfig:
     try:
-        return load_config()
+        config = load_config()
     except FileNotFoundError as exc:
         console.print("[red]agentprof.yml was not found.[/red]")
         console.print("Run `agentprof init` to create the local workspace.")
@@ -84,6 +86,8 @@ def _load_config_or_exit() -> AgentProfConfig:
         console.print("[red]agentprof.yml is invalid.[/red]")
         console.print(str(exc))
         raise typer.Exit(code=2) from exc
+    _warn_if_raw_io_enabled(config)
+    return config
 
 
 @app.callback()
@@ -118,6 +122,8 @@ def init(
 
     for path in ensure_workspace_dirs():
         created.append(str(path))
+    if write_workspace_gitignore(force=force):
+        created.append(str(APP_DIR / ".gitignore"))
 
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
@@ -160,6 +166,13 @@ def doctor() -> None:
         console.print("[red]AgentProf workspace is not usable.[/red]")
         console.print(f"Store/config check failed: {exc}")
         raise typer.Exit(code=2) from exc
+
+    privacy_errors = _privacy_doctor_errors(config)
+    if privacy_errors:
+        console.print("[red]AgentProf workspace has privacy configuration issues.[/red]")
+        for message in privacy_errors:
+            console.print(f"  {message}")
+        raise typer.Exit(code=2)
 
     console.print("[green]AgentProf workspace looks ready.[/green]")
 
@@ -568,7 +581,10 @@ def import_langfuse_export_command(
             file_format=file_format,
         )
     except MissingSaltError as exc:
-        console.print("[red]Cannot hash Langfuse I/O without a configured salt.[/red]")
+        console.print(
+            "[red]Cannot hash Langfuse identifiers or I/O without a configured salt.[/red]"
+        )
+        console.print(str(exc))
         console.print(
             f"Set `{config.privacy.hmac_salt_env}` or disable `privacy.hash_inputs`."
         )
@@ -606,6 +622,28 @@ def _parse_decimal_option(value: str, name: str) -> Decimal:
         return Decimal(value)
     except InvalidOperation as exc:
         raise ValueError(f"{name} must be a decimal value") from exc
+
+
+def _warn_if_raw_io_enabled(config: AgentProfConfig) -> None:
+    if config.privacy.store_raw_io:
+        error_console.print(
+            "[yellow]WARNING: privacy.store_raw_io is true; raw Langfuse inputs "
+            "and outputs may be written to disk.[/yellow]"
+        )
+
+
+def _privacy_doctor_errors(config: AgentProfConfig) -> list[str]:
+    errors: list[str] = []
+    if config.privacy.store_raw_io:
+        errors.append(
+            "privacy.store_raw_io is true; raw inputs and outputs may be persisted."
+        )
+    if config.privacy.hash_inputs:
+        try:
+            salt_from_env(config.privacy.hmac_salt_env)
+        except MissingSaltError as exc:
+            errors.append(str(exc))
+    return errors
 
 
 def _validate_report_output_dir(output_dir: Path) -> None:
