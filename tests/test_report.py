@@ -7,14 +7,15 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from agentprof.cli import app
+from agentprof.cli import REPORT_SHOW_MAX_BYTES, app
 from agentprof.config import DEFAULT_STORE_PATH
-from agentprof.report.runner import generate_report
+from agentprof.report.runner import REPORT_ID_MAX_LENGTH, generate_report
 from agentprof.store.duckdb_store import (
     CostLedgerRecord,
     DuckDBStore,
     IssueEvidenceRecord,
     IssueRecord,
+    ReportRecord,
 )
 
 
@@ -246,6 +247,23 @@ def test_generate_report_rejects_unsafe_report_id(tmp_path: Path) -> None:
         raise AssertionError("expected ValueError")
 
 
+def test_generate_report_rejects_overlong_report_id(tmp_path: Path) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+
+    try:
+        generate_report(
+            store,
+            project="tracer",
+            output_dir=tmp_path / "reports",
+            report_id="a" * (REPORT_ID_MAX_LENGTH + 1),
+            generated_at=_dt("2026-04-26T12:00:00+00:00"),
+        )
+    except ValueError as exc:
+        assert str(REPORT_ID_MAX_LENGTH) in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
 def test_cli_report_generate_writes_outputs() -> None:
     with runner.isolated_filesystem():
         init_result = runner.invoke(app, ["init"])
@@ -337,6 +355,135 @@ def test_cli_report_generate_rejects_unsafe_report_id() -> None:
         assert init_result.exit_code == 0
         assert result.exit_code == 2
         assert "report_id" in result.output
+
+
+def test_cli_report_generate_rejects_overlong_report_id() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+
+        result = runner.invoke(
+            app,
+            ["report", "generate", "--report-id", "a" * (REPORT_ID_MAX_LENGTH + 1)],
+        )
+
+        assert init_result.exit_code == 0
+        assert result.exit_code == 2
+        assert str(REPORT_ID_MAX_LENGTH) in result.output
+
+
+def test_cli_report_generate_rejects_output_dir_outside_reports_root() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+
+        result = runner.invoke(
+            app,
+            ["report", "generate", "--output-dir", "reports", "--report-id", "outside"],
+        )
+
+        assert init_result.exit_code == 0
+        assert result.exit_code == 2
+        assert "--output-dir" in result.output
+        assert not Path("reports").exists()
+
+
+def test_cli_report_show_rejects_db_path_outside_reports_root() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        store = DuckDBStore(DEFAULT_STORE_PATH)
+        secret_path = Path("secret.txt").resolve()
+        secret_path.write_text("TOPSECRET", encoding="utf-8")
+        store.upsert_report(
+            ReportRecord(
+                report_id="evil",
+                project="tracer",
+                window_start=None,
+                window_end=None,
+                summary={},
+                report_md_path=str(secret_path),
+                report_json_path=str(secret_path),
+            )
+        )
+
+        result = runner.invoke(app, ["report", "show", "evil"])
+
+        assert init_result.exit_code == 0
+        assert result.exit_code == 2
+        assert "artifact was not found" in result.output
+        assert "TOPSECRET" not in result.output
+
+
+def test_cli_report_show_rejects_symlinked_artifact() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        store = DuckDBStore(DEFAULT_STORE_PATH)
+        _seed_retry_issue(store)
+        generate_result = runner.invoke(
+            app,
+            ["report", "generate", "--report-id", "symlink-report"],
+        )
+        secret_path = Path("secret.txt").resolve()
+        secret_path.write_text("TOPSECRET", encoding="utf-8")
+        markdown_path = Path(".agentprof/reports/symlink-report.md")
+        markdown_path.unlink()
+        markdown_path.symlink_to(secret_path)
+
+        result = runner.invoke(app, ["report", "show", "symlink-report"])
+
+        assert init_result.exit_code == 0
+        assert generate_result.exit_code == 0
+        assert result.exit_code == 2
+        assert "artifact was not found" in result.output
+        assert "TOPSECRET" not in result.output
+
+
+def test_cli_report_show_rejects_oversized_artifact() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        store = DuckDBStore(DEFAULT_STORE_PATH)
+        artifact_path = Path(".agentprof/reports/large.md")
+        artifact_path.write_bytes(b"x" * (REPORT_SHOW_MAX_BYTES + 1))
+        store.upsert_report(
+            ReportRecord(
+                report_id="large",
+                project="tracer",
+                window_start=None,
+                window_end=None,
+                summary={},
+                report_md_path=str(artifact_path),
+                report_json_path=str(artifact_path),
+            )
+        )
+
+        result = runner.invoke(app, ["report", "show", "large"])
+
+        assert init_result.exit_code == 0
+        assert result.exit_code == 2
+        assert "too large" in result.output
+
+
+def test_cli_report_show_rejects_non_utf8_artifact() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        store = DuckDBStore(DEFAULT_STORE_PATH)
+        artifact_path = Path(".agentprof/reports/binary.md")
+        artifact_path.write_bytes(b"\xff")
+        store.upsert_report(
+            ReportRecord(
+                report_id="binary",
+                project="tracer",
+                window_start=None,
+                window_end=None,
+                summary={},
+                report_md_path=str(artifact_path),
+                report_json_path=str(artifact_path),
+            )
+        )
+
+        result = runner.invoke(app, ["report", "show", "binary"])
+
+        assert init_result.exit_code == 0
+        assert result.exit_code == 2
+        assert "not valid UTF-8" in result.output
 
 
 def _seed_retry_issue(store: DuckDBStore) -> None:
