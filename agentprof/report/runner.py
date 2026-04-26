@@ -339,7 +339,17 @@ def _multi_agent_waste_visual(
         "cost_multiple": cost_multiple,
         "agent_count": len(agent_names) if agent_names else max_agent_count,
         "agent_names": agent_names,
+        "baseline_basis": _multi_agent_baseline_basis(issue_evidence),
     }
+
+
+def _multi_agent_baseline_basis(evidence: list[IssueEvidenceRecord]) -> str:
+    if any(
+        item.attributes.get("basis") == "observed_single_agent_baseline"
+        for item in evidence
+    ):
+        return "observed"
+    return "estimated"
 
 
 def _distinct_agent_names(evidence: list[IssueEvidenceRecord]) -> list[str]:
@@ -376,11 +386,21 @@ def _multi_agent_waste_svg(visual: dict[str, Any]) -> str:
     multiple = visual["cost_multiple"]
     multiple_label = f"{multiple:.2f}x" if multiple is not None else "n/a"
     agent_label = _agent_label(visual)
+    subtitle = (
+        "Observed single-agent baseline estimate"
+        if visual["baseline_basis"] == "observed"
+        else "Configurable single-agent baseline estimate"
+    )
+    basis_label = (
+        "Basis: observed single-agent baseline traces. Validate match quality before acting."
+        if visual["baseline_basis"] == "observed"
+        else "Basis: configurable estimate. Validate with observed project-specific single-agent baselines."
+    )
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="760" height="360" viewBox="0 0 760 360" role="img" aria-label="Multi-agent waste estimate">
   <rect width="760" height="360" rx="24" fill="#0f172a"/>
   <text x="40" y="48" fill="#f8fafc" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="26" font-weight="700">Multi-Agent Waste Estimate</text>
-  <text x="40" y="80" fill="#cbd5e1" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14">Configurable single-agent baseline estimate</text>
+  <text x="40" y="80" fill="#cbd5e1" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14">{escape(subtitle)}</text>
 
   <text x="40" y="128" fill="#e2e8f0" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15">Actual multi-agent traces</text>
   <rect x="260" y="111" width="420" height="28" rx="14" fill="#1e293b"/>
@@ -404,7 +424,7 @@ def _multi_agent_waste_svg(visual: dict[str, Any]) -> str:
   <text x="534" y="251" fill="#94a3b8" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13">Agents detected</text>
   <text x="534" y="280" fill="#f8fafc" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700">{escape(agent_label)}</text>
 
-  <text x="40" y="330" fill="#94a3b8" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12">Basis: configurable estimate. Validate with observed project-specific single-agent baselines.</text>
+  <text x="40" y="330" fill="#94a3b8" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12">{escape(basis_label)}</text>
 </svg>
 """
 

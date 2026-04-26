@@ -204,6 +204,149 @@ def test_analyze_multi_agent_waste_preserves_retry_and_spec_results(
     assert store.fetch_issues(kind=ISSUE_KIND) == []
 
 
+def test_analyze_multi_agent_waste_uses_observed_single_agent_baseline(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    spans = _observed_baseline_spans(Decimal("0.030"), Decimal("0.040"), Decimal("0.050"))
+    store.replace_normalized(spans=spans, traces=build_normalized_traces(spans))
+
+    result = analyze_multi_agent_waste(store, baseline_mode="observed")
+    issues = store.fetch_issues(kind=ISSUE_KIND)
+    evidence = store.fetch_issue_evidence(issue_id=issues[0].issue_id)
+    costs = store.fetch_cost_ledger(attribution_method=ATTRIBUTION_METHOD)
+
+    assert result.affected_traces == 1
+    finding = result.findings[0]
+    assert finding.actual_cost_usd == Decimal("0.100")
+    assert finding.baseline_cost_usd == Decimal("0.040")
+    assert finding.estimated_overhead_usd == Decimal("0.060")
+    assert finding.cost_multiple == Decimal("2.5")
+    assert finding.baseline_mode == "observed"
+    assert finding.baseline_match_count == 3
+    assert finding.baseline_trace_ids == [
+        "trace-single-baseline-1",
+        "trace-single-baseline-2",
+        "trace-single-baseline-3",
+    ]
+    assert finding.confidence == "high"
+
+    assert issues[0].confidence == "high"
+    assert issues[0].total_cost_usd == Decimal("0.100")
+    assert issues[0].wasted_cost_usd == Decimal("0.060")
+    assert evidence[0].attributes["basis"] == "observed_single_agent_baseline"
+    assert evidence[0].attributes["baseline_mode"] == "observed"
+    assert evidence[0].attributes["baseline_match_count"] == 3
+    assert evidence[0].attributes["baseline_trace_ids"] == [
+        "trace-single-baseline-1",
+        "trace-single-baseline-2",
+        "trace-single-baseline-3",
+    ]
+    assert costs[0].amount_usd == Decimal("0.060")
+
+
+def test_analyze_multi_agent_waste_observed_mode_requires_enough_matches_and_clears_stale(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    spans = _observed_baseline_spans(Decimal("0.040"))
+    store.replace_normalized(spans=spans, traces=build_normalized_traces(spans))
+    analyze_multi_agent_waste(store)
+
+    result = analyze_multi_agent_waste(
+        store,
+        baseline_mode="observed",
+        min_baseline_matches=2,
+    )
+
+    assert result.multi_agent_traces == 1
+    assert result.affected_traces == 0
+    assert result.findings == []
+    assert store.fetch_issues(kind=ISSUE_KIND) == []
+    assert store.fetch_cost_ledger(attribution_method=ATTRIBUTION_METHOD) == []
+
+
+def test_analyze_multi_agent_waste_observed_confidence_uses_match_count(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    spans = _observed_baseline_spans(Decimal("0.040"))
+    store.replace_normalized(spans=spans, traces=build_normalized_traces(spans))
+
+    result = analyze_multi_agent_waste(store, baseline_mode="observed")
+
+    assert result.affected_traces == 1
+    assert result.findings[0].baseline_match_count == 1
+    assert result.findings[0].confidence == "medium"
+    assert store.fetch_issues(kind=ISSUE_KIND)[0].confidence == "medium"
+
+
+def test_analyze_multi_agent_waste_observed_mode_matches_input_hash_when_available(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    spans = _observed_baseline_spans(Decimal("0.040")) + [
+        span.model_copy(
+            update={
+                "trace_id": "trace-single-baseline-other-input",
+                "span_id": "single-baseline-other-input-root",
+                "input_hash": "different-task-hash",
+                "cost_usd": Decimal("0.010"),
+            }
+        )
+        for span in [_single_agent_baseline_root(99, Decimal("0.010"))]
+    ]
+    store.replace_normalized(spans=spans, traces=build_normalized_traces(spans))
+
+    result = analyze_multi_agent_waste(store, baseline_mode="observed")
+
+    finding = result.findings[0]
+
+    assert finding.baseline_cost_usd == Decimal("0.040")
+    assert finding.baseline_trace_ids == ["trace-single-baseline-1"]
+
+
+def test_cli_multi_agent_waste_observed_mode_detects_matching_baselines() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        store = DuckDBStore(DEFAULT_STORE_PATH)
+        spans = _observed_baseline_spans(
+            Decimal("0.030"), Decimal("0.040"), Decimal("0.050")
+        )
+        store.replace_normalized(spans=spans, traces=build_normalized_traces(spans))
+
+        result = runner.invoke(
+            app,
+            ["analyze", "multi-agent-waste", "--baseline-mode", "observed"],
+        )
+        issues = store.fetch_issues(kind=ISSUE_KIND)
+        evidence = store.fetch_issue_evidence(issue_id=issues[0].issue_id)
+
+    assert init_result.exit_code == 0
+    assert result.exit_code == 0
+    assert "baseline mode: observed" in result.output
+    assert "estimated orchestration overhead: $0.060000000" in result.output
+    assert issues[0].confidence == "high"
+    assert evidence[0].attributes["basis"] == "observed_single_agent_baseline"
+
+
+def test_analyze_multi_agent_waste_validates_observed_baseline_options(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+
+    for kwargs, field in [
+        ({"baseline_mode": "other"}, "baseline_mode"),
+        ({"min_baseline_matches": 0}, "min_baseline_matches"),
+    ]:
+        try:
+            analyze_multi_agent_waste(store, **kwargs)
+        except ValueError as exc:
+            assert field in str(exc)
+        else:
+            raise AssertionError("expected ValueError")
+
+
 def test_cost_ledger_preserves_multi_agent_waste_entries(tmp_path: Path) -> None:
     store = DuckDBStore(tmp_path / "agentprof.duckdb")
     spans = _multi_agent_spans()
@@ -484,6 +627,71 @@ def _aggregate_cost_multi_agent_spans() -> list[NormalizedSpan]:
             cost_confidence="source",
         ),
     ]
+
+
+def _observed_baseline_spans(*baseline_costs: Decimal) -> list[NormalizedSpan]:
+    spans = [
+        NormalizedSpan(
+            trace_id="trace-observed-multi",
+            span_id="multi-root",
+            source="langfuse",
+            name="triage_agent",
+            span_type="root",
+            agent_name="triage_agent",
+            start_time=_dt("2026-04-26T10:00:00+00:00"),
+            end_time=_dt("2026-04-26T10:00:05+00:00"),
+            status="ok",
+            input_hash="same-task-hash",
+        ),
+        NormalizedSpan(
+            trace_id="trace-observed-multi",
+            span_id="multi-policy-agent",
+            parent_span_id="multi-root",
+            source="langfuse",
+            name="policy_agent",
+            span_type="agent",
+            agent_name="policy_agent",
+            start_time=_dt("2026-04-26T10:00:01+00:00"),
+            end_time=_dt("2026-04-26T10:00:04+00:00"),
+            status="ok",
+        ),
+        NormalizedSpan(
+            trace_id="trace-observed-multi",
+            span_id="multi-policy-llm",
+            parent_span_id="multi-policy-agent",
+            source="langfuse",
+            name="policy_reasoning",
+            span_type="llm",
+            start_time=_dt("2026-04-26T10:00:02+00:00"),
+            end_time=_dt("2026-04-26T10:00:03+00:00"),
+            status="ok",
+            cost_usd=Decimal("0.100"),
+            cost_confidence="source",
+        ),
+    ]
+    spans.extend(
+        _single_agent_baseline_root(index, cost)
+        for index, cost in enumerate(baseline_costs, start=1)
+    )
+    return spans
+
+
+def _single_agent_baseline_root(index: int, cost: Decimal) -> NormalizedSpan:
+    minute = index % 60
+    return NormalizedSpan(
+        trace_id=f"trace-single-baseline-{index}",
+        span_id=f"single-baseline-{index}-root",
+        source="langfuse",
+        name="triage_agent",
+        span_type="root",
+        agent_name="triage_agent",
+        start_time=_dt(f"2026-04-26T10:{minute:02d}:00+00:00"),
+        end_time=_dt(f"2026-04-26T10:{minute:02d}:02+00:00"),
+        status="ok",
+        input_hash="same-task-hash",
+        cost_usd=cost,
+        cost_confidence="source",
+    )
 
 
 def _retry_and_spec_spans() -> list[NormalizedSpan]:
