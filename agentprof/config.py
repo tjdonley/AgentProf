@@ -11,6 +11,8 @@ APP_DIR = Path(".agentprof")
 CONFIG_FILE = Path("agentprof.yml")
 APP_SUBDIRS = ("data", "baselines", "reports", "cache")
 DEFAULT_STORE_PATH = APP_DIR / "data" / "agentprof.duckdb"
+WORKSPACE_GITIGNORE = APP_DIR / ".gitignore"
+WORKSPACE_GITIGNORE_CONTENT = "*\n!.gitignore\n"
 
 DEFAULT_CONFIG = """project:
   name: tracer
@@ -119,6 +121,19 @@ def write_default_config(path: Path = CONFIG_FILE, *, force: bool = False) -> bo
         return False
 
     path.write_text(DEFAULT_CONFIG, encoding="utf-8")
+    return True
+
+
+def write_workspace_gitignore(
+    path: Path = WORKSPACE_GITIGNORE,
+    *,
+    force: bool = False,
+) -> bool:
+    if path.exists() and not force:
+        return False
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(WORKSPACE_GITIGNORE_CONTENT, encoding="utf-8")
     return True
 
 

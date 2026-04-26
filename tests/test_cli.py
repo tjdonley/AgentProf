@@ -26,6 +26,10 @@ def test_init_creates_workspace() -> None:
         assert "AgentProf initialized" in result.output
 
         assert (Path("agentprof.yml")).is_file()
+        assert (
+            Path(".agentprof/.gitignore").read_text(encoding="utf-8")
+            == "*\n!.gitignore\n"
+        )
         for subdir in APP_SUBDIRS:
             assert (Path(".agentprof") / subdir).is_dir()
         assert DEFAULT_STORE_PATH.is_file()
@@ -39,7 +43,8 @@ def test_doctor_requires_init() -> None:
         assert "workspace is incomplete" in result.output
 
 
-def test_doctor_after_init() -> None:
+def test_doctor_after_init(monkeypatch) -> None:
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt-value-123")
     with runner.isolated_filesystem():
         init_result = runner.invoke(app, ["init"])
         doctor_result = runner.invoke(app, ["doctor"])
@@ -47,6 +52,72 @@ def test_doctor_after_init() -> None:
         assert init_result.exit_code == 0
         assert doctor_result.exit_code == 0
         assert "workspace looks ready" in doctor_result.output
+
+
+def test_doctor_allows_existing_workspace_without_gitignore(monkeypatch) -> None:
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt-value-123")
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        Path(".agentprof/.gitignore").unlink()
+
+        doctor_result = runner.invoke(app, ["doctor"])
+
+        assert init_result.exit_code == 0
+        assert doctor_result.exit_code == 0
+        assert "workspace looks ready" in doctor_result.output
+
+
+def test_doctor_fails_when_hash_salt_is_missing() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        doctor_result = runner.invoke(app, ["doctor"])
+
+        assert init_result.exit_code == 0
+        assert doctor_result.exit_code == 2
+        assert "privacy configuration issues" in doctor_result.output
+        assert "AGENTPROF_HASH_SALT is not set" in doctor_result.output
+
+
+def test_doctor_fails_when_hash_salt_is_weak(monkeypatch) -> None:
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "short")
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        doctor_result = runner.invoke(app, ["doctor"])
+
+        assert init_result.exit_code == 0
+        assert doctor_result.exit_code == 2
+        assert "at least" in doctor_result.output
+
+
+def test_doctor_fails_when_raw_io_storage_is_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt-value-123")
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        Path("agentprof.yml").write_text(
+            "privacy:\n  store_raw_io: true\n",
+            encoding="utf-8",
+        )
+
+        doctor_result = runner.invoke(app, ["doctor"])
+
+        assert init_result.exit_code == 0
+        assert doctor_result.exit_code == 2
+        assert "store_raw_io is true" in doctor_result.output
+
+
+def test_cli_warns_when_raw_io_storage_is_enabled() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        Path("agentprof.yml").write_text(
+            "privacy:\n  store_raw_io: true\n  hash_inputs: false\n",
+            encoding="utf-8",
+        )
+
+        stats_result = runner.invoke(app, ["store", "stats"])
+
+        assert init_result.exit_code == 0
+        assert stats_result.exit_code == 0
+        assert "WARNING: privacy.store_raw_io is true" in stats_result.output
 
 
 def test_doctor_fails_when_store_is_missing() -> None:

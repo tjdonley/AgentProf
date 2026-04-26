@@ -11,6 +11,9 @@ from decimal import Decimal
 from typing import Any
 
 
+MIN_HMAC_SALT_BYTES = 16
+
+
 DEFAULT_VOLATILE_KEYS = frozenset(
     {
         "created_at",
@@ -56,7 +59,12 @@ def salt_from_env(env_name: str) -> bytes:
     value = os.getenv(env_name)
     if not value:
         raise MissingSaltError(f"{env_name} is not set")
-    return value.encode("utf-8")
+    salt = value.encode("utf-8")
+    if len(salt) < MIN_HMAC_SALT_BYTES:
+        raise MissingSaltError(
+            f"{env_name} must be at least {MIN_HMAC_SALT_BYTES} bytes"
+        )
+    return salt
 
 
 def hmac_sha256_hexdigest(content: str | bytes, salt: str | bytes) -> str:
@@ -75,6 +83,14 @@ def retry_fingerprint(content: Any, salt: str | bytes) -> str:
     return hmac_sha256_hexdigest(
         canonicalize_for_hash(content, strip_volatile=True), salt
     )
+
+
+def user_id_hash(user_id: str, salt: str | bytes) -> str:
+    return hmac_sha256_hexdigest(f"agentprof:user_id:{user_id}", salt)
+
+
+def session_id_hash(session_id: str, salt: str | bytes) -> str:
+    return hmac_sha256_hexdigest(f"agentprof:session_id:{session_id}", salt)
 
 
 def normalize_volatile_text(value: str) -> str:

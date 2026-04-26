@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from agentprof.config import AgentProfConfig
-from agentprof.privacy.hashing import content_hash, retry_fingerprint, salt_from_env
+from agentprof.privacy.hashing import (
+    content_hash,
+    retry_fingerprint,
+    salt_from_env,
+    session_id_hash,
+    user_id_hash,
+)
 from agentprof.privacy.redactor import evidence_preview, redact_value, rules_from_config
 from agentprof.store.duckdb_store import DuckDBStore, RawSpanRecord
 
@@ -16,6 +22,7 @@ from agentprof.store.duckdb_store import DuckDBStore, RawSpanRecord
 LANGFUSE_SOURCE = "langfuse"
 INPUT_FIELD = "input"
 OUTPUT_FIELD = "output"
+IDENTITY_FIELDS = ("userId", "user_id", "sessionId", "session_id")
 
 
 class LangfuseExportFormat(StrEnum):
@@ -118,10 +125,20 @@ def sanitize_observation_payload(
     rules = rules_from_config(privacy.redact)
     raw_input = payload.get(INPUT_FIELD)
     raw_output = payload.get(OUTPUT_FIELD)
-    salt = _hash_salt(config, raw_input=raw_input, raw_output=raw_output)
+    raw_user_id = _string_field(payload, "userId", "user_id")
+    raw_session_id = _string_field(payload, "sessionId", "session_id")
+    salt = _hash_salt(
+        config,
+        raw_input=raw_input,
+        raw_output=raw_output,
+        raw_user_id=raw_user_id,
+        raw_session_id=raw_session_id,
+    )
 
     payload.pop(INPUT_FIELD, None)
     payload.pop(OUTPUT_FIELD, None)
+    for key in IDENTITY_FIELDS:
+        payload.pop(key, None)
     payload = redact_value(payload, rules)
     if privacy.store_raw_io:
         if raw_input is not None:
@@ -132,6 +149,8 @@ def sanitize_observation_payload(
     payload["_agentprof_privacy"] = _privacy_metadata(
         raw_input=raw_input,
         raw_output=raw_output,
+        raw_user_id=raw_user_id,
+        raw_session_id=raw_session_id,
         config=config,
         salt=salt,
     )
@@ -142,6 +161,8 @@ def _privacy_metadata(
     *,
     raw_input: Any,
     raw_output: Any,
+    raw_user_id: str | None,
+    raw_session_id: str | None,
     config: AgentProfConfig,
     salt: bytes | None,
 ) -> dict[str, Any]:
@@ -152,6 +173,8 @@ def _privacy_metadata(
         "redacted_io_stored": privacy.store_redacted_io,
         "input_hash": None,
         "output_hash": None,
+        "user_hash": None,
+        "session_hash": None,
         "input_retry_fingerprint": None,
         "output_retry_fingerprint": None,
         "input_preview": None,
@@ -165,6 +188,10 @@ def _privacy_metadata(
         if raw_output is not None:
             metadata["output_hash"] = content_hash(raw_output, salt)
             metadata["output_retry_fingerprint"] = retry_fingerprint(raw_output, salt)
+        if raw_user_id is not None:
+            metadata["user_hash"] = user_id_hash(raw_user_id, salt)
+        if raw_session_id is not None:
+            metadata["session_hash"] = session_id_hash(raw_session_id, salt)
 
     if privacy.store_redacted_io:
         if raw_input is not None:
@@ -188,8 +215,15 @@ def _hash_salt(
     *,
     raw_input: Any,
     raw_output: Any,
+    raw_user_id: str | None,
+    raw_session_id: str | None,
 ) -> bytes | None:
-    if not config.privacy.hash_inputs or (raw_input is None and raw_output is None):
+    if not config.privacy.hash_inputs or (
+        raw_input is None
+        and raw_output is None
+        and raw_user_id is None
+        and raw_session_id is None
+    ):
         return None
     return salt_from_env(config.privacy.hmac_salt_env)
 

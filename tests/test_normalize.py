@@ -48,7 +48,7 @@ def test_map_langfuse_raw_span_preserves_metrics_privacy_and_trace_attributes() 
                 "statusMessage": "Timeout 504 after 30000 ms",
                 "metadata": {"error_type": "TimeoutError"},
                 "sessionId": "session-1",
-                "userId": "user-hash-1",
+                "userId": "raw-user-1",
                 "environment": "prod",
                 "version": "2026.04.26",
                 "promptName": "refund_flow",
@@ -59,6 +59,8 @@ def test_map_langfuse_raw_span_preserves_metrics_privacy_and_trace_attributes() 
                     "output_retry_fingerprint": "output-retry-fingerprint",
                     "input_preview": "redacted input",
                     "output_preview": "redacted output",
+                    "session_hash": "hashed-session-1",
+                    "user_hash": "hashed-user-1",
                 },
             }
         ),
@@ -86,8 +88,11 @@ def test_map_langfuse_raw_span_preserves_metrics_privacy_and_trace_attributes() 
     assert span.input_retry_fingerprint == "input-retry-fingerprint"
     assert span.output_retry_fingerprint == "output-retry-fingerprint"
     assert span.output_preview == "redacted output"
+    assert span.session_id == "hashed-session-1"
+    assert span.user_hash == "hashed-user-1"
     assert span.attributes["promptName"] == "refund_flow"
-    assert span.attributes["sessionId"] == "session-1"
+    assert "sessionId" not in span.attributes
+    assert "userId" not in span.attributes
     assert span.attributes["environment"] == "prod"
 
 
@@ -105,6 +110,33 @@ def test_langfuse_error_signature_ignores_volatile_values() -> None:
 
     assert first.error_signature == second.error_signature
     assert first.error_signature == "connection # to [hex] failed at [timestamp] for [uuid]"
+
+
+def test_map_langfuse_raw_span_does_not_promote_raw_session_id() -> None:
+    span = map_langfuse_raw_span(
+        RawSpanRow(
+            source="langfuse",
+            source_id="span-identity",
+            trace_id="trace-identity",
+            span_id="span-identity",
+            parent_span_id=None,
+            payload_json=json.dumps(
+                {
+                    "id": "span-identity",
+                    "traceId": "trace-identity",
+                    "name": "support_agent",
+                    "sessionId": "raw-session-1",
+                    "userId": "raw-user-1",
+                }
+            ),
+            raw_ref="observations.json",
+        )
+    )
+
+    assert span.session_id is None
+    assert span.user_hash is None
+    assert "sessionId" not in span.attributes
+    assert "userId" not in span.attributes
 
 
 def test_top_level_langfuse_generation_counts_as_model_call() -> None:
@@ -161,7 +193,7 @@ def test_build_normalized_traces_rolls_up_tree_metrics_and_outcome() -> None:
     assert trace.trace_id == "trace-1"
     assert trace.root_span_id == "root"
     assert trace.root_name == "support_agent"
-    assert trace.session_id == "session-1"
+    assert trace.session_id == "session-hash-1"
     assert trace.user_hash == "user-hash-1"
     assert trace.environment == "prod"
     assert trace.version == "2026.04.26"
@@ -377,8 +409,62 @@ def test_normalize_store_persists_normalized_rows_idempotently(tmp_path: Path) -
     ]
 
 
+def test_normalize_persists_hashed_user_without_raw_identity_attributes(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    store.insert_raw_spans(
+        [
+            RawSpanRecord(
+                source="langfuse",
+                source_id="root",
+                trace_id="trace-user",
+                span_id="root",
+                parent_span_id=None,
+                payload_json=json.dumps(
+                    {
+                        "id": "root",
+                        "traceId": "trace-user",
+                        "name": "support_agent",
+                        "sessionId": "session-1",
+                        "userId": "raw-user-1",
+                        "_agentprof_privacy": {
+                            "session_hash": "hashed-session-1",
+                            "user_hash": "hashed-user-1",
+                        },
+                    }
+                ),
+            )
+        ]
+    )
+
+    normalize_store(store)
+
+    with store.connect() as connection:
+        trace = connection.execute(
+            """
+            SELECT session_id, user_hash
+            FROM normalized_traces
+            WHERE trace_id = 'trace-user'
+            """
+        ).fetchone()
+        attributes_json = connection.execute(
+            """
+            SELECT attributes_json
+            FROM normalized_spans
+            WHERE trace_id = 'trace-user' AND span_id = 'root'
+            """
+        ).fetchone()[0]
+
+    attributes = json.loads(attributes_json)
+
+    assert trace == ("hashed-session-1", "hashed-user-1")
+    assert "sessionId" not in attributes
+    assert "userId" not in attributes
+
+
 def test_cli_normalize_imported_langfuse_fixture(monkeypatch) -> None:
-    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt")
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt-value-123")
     with runner.isolated_filesystem():
         init_result = runner.invoke(app, ["init"])
         import_result = runner.invoke(
@@ -419,9 +505,9 @@ def _normalized_spans() -> list[NormalizedSpan]:
             end_time=_dt("2026-04-26T10:00:05+00:00"),
             status="ok",
             input_hash="root-input-hash",
+            session_id="session-hash-1",
+            user_hash="user-hash-1",
             attributes={
-                "sessionId": "session-1",
-                "userId": "user-hash-1",
                 "environment": "prod",
                 "version": "2026.04.26",
             },

@@ -5,6 +5,7 @@ import os
 import pytest
 
 from agentprof.privacy.hashing import (
+    MIN_HMAC_SALT_BYTES,
     MissingSaltError,
     canonicalize_for_hash,
     content_hash,
@@ -87,9 +88,9 @@ def test_retry_fingerprint_normalizes_long_hex_inside_text() -> None:
 
 
 def test_salt_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGENTPROF_TEST_SALT", "secret")
+    monkeypatch.setenv("AGENTPROF_TEST_SALT", "strong-test-salt")
 
-    assert salt_from_env("AGENTPROF_TEST_SALT") == b"secret"
+    assert salt_from_env("AGENTPROF_TEST_SALT") == b"strong-test-salt"
 
 
 def test_salt_from_env_requires_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,3 +100,10 @@ def test_salt_from_env_requires_value(monkeypatch: pytest.MonkeyPatch) -> None:
         salt_from_env("AGENTPROF_TEST_SALT")
 
     assert os.getenv("AGENTPROF_TEST_SALT") is None
+
+
+def test_salt_from_env_rejects_short_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENTPROF_TEST_SALT", "x" * (MIN_HMAC_SALT_BYTES - 1))
+
+    with pytest.raises(MissingSaltError, match=str(MIN_HMAC_SALT_BYTES)):
+        salt_from_env("AGENTPROF_TEST_SALT")

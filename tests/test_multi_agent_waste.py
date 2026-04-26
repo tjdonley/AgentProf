@@ -453,7 +453,7 @@ def test_cli_multi_agent_waste_validates_non_finite_decimals() -> None:
 
 
 def test_multi_agent_fixture_smoke_path_documents_estimate(monkeypatch) -> None:
-    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt")
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt-value-123")
 
     with runner.isolated_filesystem():
         init_result = runner.invoke(app, ["init"])

@@ -74,6 +74,8 @@ class NormalizedSpan(BaseModel):
     output_retry_fingerprint: str | None = None
     input_preview: str | None = None
     output_preview: str | None = None
+    session_id: str | None = None
+    user_hash: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None

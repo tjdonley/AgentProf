@@ -49,7 +49,7 @@ KNOWN_PAYLOAD_FIELDS = {
     "metadata",
     "_agentprof_privacy",
 }
-TRACE_ATTRIBUTE_FIELDS = ("sessionId", "userId", "environment", "version")
+TRACE_ATTRIBUTE_FIELDS = ("environment", "version")
 LANGFUSE_TYPE_TO_SPAN_TYPE: dict[str, SpanType] = {
     "AGENT": "agent",
     "EMBEDDING": "embedding",
@@ -114,6 +114,8 @@ def map_langfuse_raw_span(row: RawSpanRow) -> NormalizedSpan:
         output_retry_fingerprint=_string_field(privacy, "output_retry_fingerprint"),
         input_preview=_string_field(privacy, "input_preview"),
         output_preview=_string_field(privacy, "output_preview"),
+        session_id=_string_field(privacy, "session_hash"),
+        user_hash=_string_field(privacy, "user_hash"),
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,

@@ -121,7 +121,7 @@ def test_sanitize_preserves_raw_io_only_when_raw_io_is_enabled() -> None:
 
 
 def test_sanitize_stores_retry_fingerprints_for_hashed_io(monkeypatch) -> None:
-    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt")
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt-value-123")
     config = AgentProfConfig()
 
     first = sanitize_observation_payload(
@@ -147,10 +147,40 @@ def test_sanitize_stores_retry_fingerprints_for_hashed_io(monkeypatch) -> None:
     assert first_privacy["input_retry_fingerprint"] == second_privacy["input_retry_fingerprint"]
 
 
+def test_sanitize_hashes_user_id_when_hashing_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt-value-123")
+    config = AgentProfConfig()
+
+    payload = sanitize_observation_payload(
+        {
+            "id": "obs-1",
+            "sessionId": "raw-session-1",
+            "userId": "raw-user-1",
+        },
+        config=config,
+    )
+
+    serialized = json.dumps(payload, sort_keys=True)
+    privacy = payload["_agentprof_privacy"]
+    user_hash = privacy["user_hash"]
+    session_hash = privacy["session_hash"]
+
+    assert user_hash is not None
+    assert user_hash != "raw-user-1"
+    assert len(user_hash) == 64
+    assert session_hash is not None
+    assert session_hash != "raw-session-1"
+    assert len(session_hash) == 64
+    assert "raw-user-1" not in serialized
+    assert "raw-session-1" not in serialized
+    assert "userId" not in payload
+    assert "sessionId" not in payload
+
+
 def test_import_langfuse_export_stores_sanitized_raw_spans(
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt")
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt-value-123")
     with runner.isolated_filesystem():
         init_result = runner.invoke(app, ["init"])
         import_result = runner.invoke(
@@ -200,6 +230,56 @@ def test_import_langfuse_export_stores_sanitized_raw_spans(
         assert "[SECRET]" in privacy["input_preview"]
 
 
+def test_import_langfuse_export_removes_raw_identity_fields(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt-value-123")
+    observations_path = tmp_path / "observations.json"
+    observations_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "obs-identity-1",
+                    "traceId": "trace-identity-1",
+                    "type": "SPAN",
+                    "name": "support_agent",
+                    "sessionId": "raw-session-1",
+                    "userId": "raw-user-1",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        import_result = runner.invoke(
+            app,
+            [
+                "import",
+                "langfuse-export",
+                "--observations",
+                str(observations_path),
+            ],
+        )
+
+        store = DuckDBStore(DEFAULT_STORE_PATH)
+        payload = store.fetch_raw_spans()[0].payload_json
+
+    parsed_payload = json.loads(payload)
+    privacy = parsed_payload["_agentprof_privacy"]
+
+    assert init_result.exit_code == 0
+    assert import_result.exit_code == 0
+    assert "raw-user-1" not in payload
+    assert "raw-session-1" not in payload
+    assert "userId" not in parsed_payload
+    assert "sessionId" not in parsed_payload
+    assert privacy["user_hash"] is not None
+    assert privacy["session_hash"] is not None
+
+
 def test_import_langfuse_export_requires_hash_salt_when_hashing_enabled(
     monkeypatch,
 ) -> None:
@@ -218,5 +298,25 @@ def test_import_langfuse_export_requires_hash_salt_when_hashing_enabled(
 
         assert init_result.exit_code == 0
         assert import_result.exit_code == 2
-        assert "Cannot hash Langfuse I/O" in import_result.output
+        assert "Cannot hash Langfuse identifiers or I/O" in import_result.output
+        assert not DuckDBStore(DEFAULT_STORE_PATH).stats()["raw_spans"]
+
+
+def test_import_langfuse_export_rejects_weak_hash_salt(monkeypatch) -> None:
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "short")
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        import_result = runner.invoke(
+            app,
+            [
+                "import",
+                "langfuse-export",
+                "--observations",
+                str(FIXTURES / "langfuse_observations.json"),
+            ],
+        )
+
+        assert init_result.exit_code == 0
+        assert import_result.exit_code == 2
+        assert "at least" in import_result.output
         assert not DuckDBStore(DEFAULT_STORE_PATH).stats()["raw_spans"]
