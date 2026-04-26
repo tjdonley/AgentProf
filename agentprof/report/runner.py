@@ -23,6 +23,9 @@ from agentprof.store.duckdb_store import (
 DEFAULT_REPORT_DIR = APP_DIR / "reports"
 REPORT_ID_MAX_LENGTH = 128
 REPORT_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+MARKDOWN_ESCAPE_RE = re.compile(r"([\\`*\[\]()!|])")
+MARKDOWN_AUTO_LINK_RE = re.compile(r"(?i)\b((?:https?|ftp)://)")
+MARKDOWN_WWW_LINK_RE = re.compile(r"(?i)\bwww\.")
 MULTI_AGENT_WASTE_KIND = "multi_agent_waste"
 
 
@@ -217,10 +220,10 @@ def _cost_to_json(record: CostLedgerRecord) -> dict[str, Any]:
 def _markdown_report(payload: dict[str, Any]) -> str:
     summary = payload["summary"]
     lines = [
-        f"# AgentProf Report: {payload['project']}",
+        f"# AgentProf Report: {_markdown_text(payload['project'])}",
         "",
-        f"Report ID: `{payload['report_id']}`",
-        f"Generated at: `{payload['generated_at']}`",
+        f"Report ID: {_markdown_inline_code(payload['report_id'])}",
+        f"Generated at: {_markdown_inline_code(payload['generated_at'])}",
         "",
         "## Summary",
         "",
@@ -241,7 +244,7 @@ def _markdown_report(payload: dict[str, Any]) -> str:
             [
                 "## Visuals",
                 "",
-                f"![Multi-agent waste estimate]({multi_agent_svg})",
+                f"![Multi-agent waste estimate]({_markdown_link_target(multi_agent_svg)})",
                 "",
             ]
         )
@@ -266,10 +269,10 @@ def _markdown_report(payload: dict[str, Any]) -> str:
         for record in payload["cost_ledger"]:
             lines.append(
                 "| "
-                f"{record['cost_type']} | "
+                f"{_markdown_table_cell(record['cost_type'])} | "
                 f"{_format_usd(record['amount_usd'])} | "
-                f"{record['attribution_method']} | "
-                f"{record['issue_id'] or ''} |"
+                f"{_markdown_table_cell(record['attribution_method'])} | "
+                f"{_markdown_table_cell(record['issue_id'] or '')} |"
             )
         lines.append("")
 
@@ -278,23 +281,23 @@ def _markdown_report(payload: dict[str, Any]) -> str:
 
 def _markdown_issue(issue: dict[str, Any]) -> list[str]:
     lines = [
-        f"### {issue['title']}",
+        f"### {_markdown_text(issue['title'])}",
         "",
-        f"- Issue ID: `{issue['issue_id']}`",
-        f"- Kind: `{issue['kind']}`",
-        f"- Severity: `{issue['severity']}`",
-        f"- Confidence: `{issue['confidence']}`",
+        f"- Issue ID: {_markdown_inline_code(issue['issue_id'])}",
+        f"- Kind: {_markdown_inline_code(issue['kind'])}",
+        f"- Severity: {_markdown_inline_code(issue['severity'])}",
+        f"- Confidence: {_markdown_inline_code(issue['confidence'])}",
         f"- Affected traces: {issue['affected_traces']}",
         f"- Affected spans: {issue['affected_spans']}",
         f"- Wasted cost: {_format_usd(issue['wasted_cost_usd'])}",
         f"- Potential savings: {_format_usd(issue['potential_savings_usd'])}",
         "",
-        f"Recommendation: {issue['recommendation']}",
+        f"Recommendation: {_markdown_text(issue['recommendation'])}",
         "",
     ]
     if issue["recommended_tests"]:
         lines.extend(["Recommended tests:", ""])
-        lines.extend(f"- {test}" for test in issue["recommended_tests"])
+        lines.extend(f"- {_markdown_text(test)}" for test in issue["recommended_tests"])
         lines.append("")
     if issue["evidence"]:
         lines.extend(["Evidence:", ""])
@@ -302,7 +305,10 @@ def _markdown_issue(issue: dict[str, Any]) -> list[str]:
             location = ":".join(
                 part for part in (item["trace_id"], item["span_id"]) if part
             )
-            lines.append(f"- `{location}` {item['message']}")
+            lines.append(
+                f"- {_markdown_inline_code(location or 'unknown')} "
+                f"{_markdown_text(item['message'])}"
+            )
         lines.append("")
     return lines
 
@@ -442,6 +448,53 @@ def _agent_label(visual: dict[str, Any]) -> str:
     if names:
         return f"{count}: {', '.join(names[:2])}{'...' if len(names) > 2 else ''}"
     return str(count)
+
+
+def _markdown_text(value: Any) -> str:
+    return _escape_markdown(_single_line(value))
+
+
+def _markdown_table_cell(value: Any) -> str:
+    return _markdown_text(value)
+
+
+def _markdown_inline_code(value: Any) -> str:
+    text = _single_line(value)
+    max_backticks = max(
+        (len(match.group(0)) for match in re.finditer(r"`+", text)),
+        default=0,
+    )
+    marker = "`" * (max_backticks + 1)
+    padding = " " if text.startswith("`") or text.endswith("`") else ""
+    return f"{marker}{padding}{text}{padding}{marker}"
+
+
+def _markdown_link_target(value: Any) -> str:
+    text = _single_line(value)
+    return (
+        text.replace("\\", "%5C")
+        .replace(" ", "%20")
+        .replace("(", "%28")
+        .replace(")", "%29")
+    )
+
+
+def _escape_markdown(value: str) -> str:
+    text = escape(value, quote=False)
+    text = MARKDOWN_ESCAPE_RE.sub(r"\\\1", text)
+    text = MARKDOWN_AUTO_LINK_RE.sub(
+        lambda match: match.group(1).replace(":", "&#58;"),
+        text,
+    )
+    text = MARKDOWN_WWW_LINK_RE.sub(
+        lambda match: match.group(0).replace(".", "&#46;"),
+        text,
+    )
+    return text
+
+
+def _single_line(value: Any) -> str:
+    return "" if value is None else " ".join(str(value).split())
 
 
 def _default_report_id(generated_at: datetime) -> str:
