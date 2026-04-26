@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from agentprof import __version__
+from agentprof.analyze.retry_loop import analyze_retry_loops
 from agentprof.config import (
     APP_DIR,
     APP_SUBDIRS,
@@ -36,9 +37,11 @@ app = typer.Typer(
 store_app = typer.Typer(help="Manage the local AgentProf DuckDB store.")
 import_app = typer.Typer(help="Import trace data into the local AgentProf store.")
 cost_app = typer.Typer(help="Analyze normalized trace costs.")
+analyze_app = typer.Typer(help="Run deterministic analyzers over normalized traces.")
 app.add_typer(store_app, name="store")
 app.add_typer(import_app, name="import")
 app.add_typer(cost_app, name="cost")
+app.add_typer(analyze_app, name="analyze")
 
 
 def _version_callback(value: bool) -> None:
@@ -193,6 +196,53 @@ def cost_ledger() -> None:
             _cost_type_label(row.cost_type),
             str(row.entries),
             _format_usd(row.amount_usd),
+        )
+    console.print(table)
+
+
+@analyze_app.command("retry-loops")
+def analyze_retry_loops_command(
+    min_attempts: int = typer.Option(
+        2,
+        "--min-attempts",
+        help="Minimum repeated failing attempts required to emit an issue.",
+    ),
+) -> None:
+    """Detect repeated failing calls with the same retry fingerprint."""
+
+    config = _load_config_or_exit()
+    store = DuckDBStore(config.store.path)
+    try:
+        result = analyze_retry_loops(store, min_attempts=min_attempts)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    console.print("[green]Analyzed retry loops.[/green]")
+    console.print(f"  normalized spans seen: {result.normalized_spans_seen}")
+    console.print(f"  retry loops: {result.retry_loops}")
+    console.print(f"  affected traces: {result.affected_traces}")
+    console.print(f"  affected spans: {result.affected_spans}")
+    console.print(f"  wasted attempts: {result.wasted_attempts}")
+    console.print(f"  wasted cost: {_format_usd(result.wasted_cost_usd)}")
+    if result.findings:
+        console.print(f"  top retry loop: {result.findings[0].name}")
+
+    table = Table(title="Retry loops")
+    table.add_column("Issue")
+    table.add_column("Trace")
+    table.add_column("Name")
+    table.add_column("Attempts", justify="right")
+    table.add_column("Wasted", justify="right")
+    table.add_column("Cost", justify="right")
+    for finding in result.findings:
+        table.add_row(
+            finding.issue_id,
+            finding.trace_id,
+            finding.name,
+            str(finding.attempts),
+            str(finding.wasted_attempts),
+            _format_usd(finding.wasted_cost_usd),
         )
     console.print(table)
 

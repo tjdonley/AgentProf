@@ -17,10 +17,11 @@ This repository is early MVP software. It is usable for local import and normali
 - Show data-quality coverage for parent links, status, costs, tokens, models, and I/O hashes.
 - Build an idempotent cost ledger from normalized span costs.
 - Print a status-based cost waterfall for successful, failed, and unknown span costs.
+- Detect retry loops where the same failing call repeats with the same input fingerprint and error signature.
 
 ## Not Built Yet
 
-- Deterministic failure/waste analyzers beyond the initial cost ledger.
+- Deterministic failure/waste analyzers beyond retry-loop detection and the initial cost ledger.
 - Markdown, JSON, or HTML report generation.
 - Phoenix, OpenTelemetry, or direct API ingestion.
 - Baseline/diff workflows and CI integration.
@@ -41,6 +42,7 @@ uv run agentprof doctor
 AGENTPROF_HASH_SALT=dev-salt uv run agentprof import langfuse-export \
   --observations tests/fixtures/langfuse_observations.json
 uv run agentprof normalize
+uv run agentprof analyze retry-loops
 uv run agentprof cost ledger
 uv run agentprof store stats
 ```
@@ -89,7 +91,15 @@ uv run agentprof normalize
 
 This maps provider-specific observation payloads into canonical `normalized_spans` and `normalized_traces` tables.
 
-5. Build the cost ledger.
+5. Detect retry loops.
+
+```bash
+uv run agentprof analyze retry-loops
+```
+
+This writes `retry_loop` issues, issue evidence, and wasted retry costs when repeated failed attempts have the same trace, parent span, name, input retry fingerprint, and error signature.
+
+6. Build the cost ledger.
 
 ```bash
 uv run agentprof cost ledger
@@ -97,7 +107,7 @@ uv run agentprof cost ledger
 
 This replaces the current normalized-span cost ledger entries idempotently and prints a waterfall grouped by span status.
 
-6. Inspect store row counts.
+7. Inspect store row counts.
 
 ```bash
 uv run agentprof store stats
@@ -112,6 +122,7 @@ uv run agentprof store stats
 | `agentprof doctor` | Validate that the local workspace and store are usable. |
 | `agentprof import langfuse-export` | Import Langfuse observation exports into `raw_spans`. |
 | `agentprof normalize` | Normalize raw imported spans into canonical trace/span tables. |
+| `agentprof analyze retry-loops` | Detect repeated failing calls with the same retry fingerprint. |
 | `agentprof cost ledger` | Build `cost_ledger` from normalized span costs and print a waterfall. |
 | `agentprof store stats` | Show row counts for all store tables. |
 | `agentprof store reset --yes` | Delete and recreate the local DuckDB store. |
@@ -187,6 +198,7 @@ uv run agentprof store reset --yes
 AGENTPROF_HASH_SALT=dev-salt uv run agentprof import langfuse-export \
   --observations tests/fixtures/langfuse_observations.json
 uv run agentprof normalize
+uv run agentprof analyze retry-loops
 uv run agentprof cost ledger
 uv run agentprof store stats
 ```
