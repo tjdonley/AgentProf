@@ -166,6 +166,31 @@ def test_analyze_spec_violations_matches_missing_field_names_exactly(
     assert result.spec_violations == 0
 
 
+def test_analyze_spec_violations_requires_explicit_missing_message(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    spans = [
+        span.model_copy(
+            update={
+                "status": "ok",
+                "status_message": "validated required field region",
+                "error_signature": "validated required field region",
+                "input_preview": None,
+                "output_preview": None,
+            }
+        )
+        if span.span_id == "tool"
+        else span
+        for span in _spec_spans()
+    ]
+    store.replace_normalized(spans=spans, traces=build_normalized_traces(spans))
+
+    result = analyze_spec_violations(store, contracts=[_contract()])
+
+    assert result.spec_violations == 0
+
+
 def test_cli_spec_violation_analyzer_reads_configured_contract() -> None:
     with runner.isolated_filesystem():
         init_result = runner.invoke(app, ["init"])

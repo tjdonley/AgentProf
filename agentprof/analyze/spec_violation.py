@@ -198,9 +198,13 @@ def _message_mentions_missing_field(span: NormalizedSpanAnalysisRow, field: str)
             return True
         if _contains_phrase(normalized, f"missing field {normalized_field}"):
             return True
-        if _contains_phrase(normalized, f"required field {normalized_field}"):
+        if _contains_phrase(normalized, f"required field {normalized_field} missing"):
             return True
-        if _contains_phrase(normalized, f"{normalized_field} is required"):
+        if _contains_phrase(normalized, f"{normalized_field} is missing"):
+            return True
+        if _contains_phrase(normalized, f"{normalized_field} absent"):
+            return True
+        if _contains_phrase(normalized, f"{normalized_field} omitted"):
             return True
     return False
 
