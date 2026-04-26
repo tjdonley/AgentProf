@@ -13,6 +13,7 @@ uv sync
 uv run agentprof --help
 uv run agentprof init
 uv run agentprof doctor
+uv run agentprof store stats
 ```
 
 ## Development
