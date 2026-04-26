@@ -102,6 +102,8 @@ class NormalizedSpanAgentAnalysisRow:
     name: str
     span_type: str
     agent_name: str | None
+    status: str
+    input_hash: str | None
     start_time: datetime | None
     end_time: datetime | None
     cost_usd: Decimal | None
@@ -614,8 +616,8 @@ class DuckDBStore:
             rows = connection.execute(
                 """
                 SELECT trace_id, span_id, parent_span_id, name, span_type, agent_name,
-                       CAST(start_time AS VARCHAR), CAST(end_time AS VARCHAR),
-                       cost_usd, cost_confidence
+                       status, input_hash, CAST(start_time AS VARCHAR),
+                       CAST(end_time AS VARCHAR), cost_usd, cost_confidence
                 FROM normalized_spans
                 ORDER BY trace_id, parent_span_id, start_time, span_id
                 """
@@ -629,10 +631,12 @@ class DuckDBStore:
                 name=row[3],
                 span_type=row[4],
                 agent_name=row[5],
-                start_time=_datetime_from_store(row[6]),
-                end_time=_datetime_from_store(row[7]),
-                cost_usd=row[8],
-                cost_confidence=row[9],
+                status=row[6],
+                input_hash=row[7],
+                start_time=_datetime_from_store(row[8]),
+                end_time=_datetime_from_store(row[9]),
+                cost_usd=row[10],
+                cost_confidence=row[11],
             )
             for row in rows
         ]

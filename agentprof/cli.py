@@ -38,6 +38,11 @@ class ReportShowFormat(StrEnum):
     json = "json"
 
 
+class MultiAgentBaselineMode(StrEnum):
+    estimated = "estimated"
+    observed = "observed"
+
+
 console = Console()
 app = typer.Typer(
     name="agentprof",
@@ -304,6 +309,11 @@ def analyze_multi_agent_waste_command(
         "--baseline-ratio",
         help="Configured single-agent baseline cost ratio, greater than 0 and less than 1.",
     ),
+    baseline_mode: MultiAgentBaselineMode = typer.Option(
+        MultiAgentBaselineMode.estimated,
+        "--baseline-mode",
+        help="Use a configured estimate or observed matching single-agent traces.",
+    ),
     min_agents: int = typer.Option(
         2,
         "--min-agents",
@@ -314,6 +324,11 @@ def analyze_multi_agent_waste_command(
         "--min-overhead",
         help="Minimum estimated orchestration overhead required to emit an issue.",
     ),
+    min_baseline_matches: int = typer.Option(
+        1,
+        "--min-baseline-matches",
+        help="Minimum observed single-agent baseline matches required in observed mode.",
+    ),
 ) -> None:
     """Estimate multi-agent orchestration overhead against a configured baseline."""
 
@@ -323,8 +338,10 @@ def analyze_multi_agent_waste_command(
         result = analyze_multi_agent_waste(
             store,
             baseline_ratio=_parse_decimal_option(baseline_ratio, "baseline_ratio"),
+            baseline_mode=baseline_mode.value,
             min_agents=min_agents,
             min_overhead=_parse_decimal_option(min_overhead, "min_overhead"),
+            min_baseline_matches=min_baseline_matches,
         )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -332,6 +349,7 @@ def analyze_multi_agent_waste_command(
 
     console.print("[green]Analyzed multi-agent waste.[/green]")
     console.print(f"  normalized spans seen: {result.normalized_spans_seen}")
+    console.print(f"  baseline mode: {baseline_mode.value}")
     console.print(f"  multi-agent traces: {result.multi_agent_traces}")
     console.print(f"  affected traces: {result.affected_traces}")
     console.print(f"  affected spans: {result.affected_spans}")

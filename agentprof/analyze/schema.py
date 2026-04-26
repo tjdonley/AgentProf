@@ -72,6 +72,10 @@ class MultiAgentWasteFinding(BaseModel):
     estimated_overhead_usd: Decimal = Field(default=Decimal("0"))
     cost_multiple: Decimal = Field(default=Decimal("0"))
     baseline_ratio: Decimal = Field(default=Decimal("0.50"))
+    baseline_mode: str = "estimated"
+    baseline_match_count: int = 0
+    baseline_trace_ids: list[str] = Field(default_factory=list)
+    confidence: str = "medium"
 
 
 class MultiAgentWasteAnalysisResult(BaseModel):

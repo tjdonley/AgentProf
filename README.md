@@ -125,7 +125,7 @@ This writes `spec_violation` issues, issue evidence, and wasted spec-violation c
 uv run agentprof analyze multi-agent-waste
 ```
 
-This writes `multi_agent_waste` issues, issue evidence, and estimated orchestration overhead costs when a costed trace has multiple distinct root/agent actors. The estimate uses a configured single-agent baseline ratio, which defaults to `0.50` and can be changed with `--baseline-ratio`.
+This writes `multi_agent_waste` issues, issue evidence, and estimated orchestration overhead costs when a costed trace has multiple distinct root/agent actors. The default estimate uses a configured single-agent baseline ratio, which defaults to `0.50` and can be changed with `--baseline-ratio`. Use `--baseline-mode observed` when the store also contains matching successful single-agent traces.
 
 8. Build the cost ledger.
 
@@ -184,6 +184,16 @@ Expected analyzer story for that fixture:
 
 This is a configurable estimate, not an observed project-specific baseline. Treat it as a research-prior starting point and validate important workflows with project-specific single-agent baseline traces when available.
 
+For project-specific comparisons, run the analyzer in observed mode after importing comparable successful single-agent traces:
+
+```bash
+uv run agentprof analyze multi-agent-waste \
+  --baseline-mode observed \
+  --min-baseline-matches 1
+```
+
+Observed mode matches costed successful single-agent traces by normalized root task name and, when available, root input hash. It uses the median matched single-agent trace cost as the baseline and records matched baseline trace IDs in issue evidence.
+
 ## CLI Commands
 
 | Command | Purpose |
@@ -195,7 +205,7 @@ This is a configurable estimate, not an observed project-specific baseline. Trea
 | `agentprof normalize` | Normalize raw imported spans into canonical trace/span tables. |
 | `agentprof analyze retry-loops` | Detect repeated failing calls with the same retry fingerprint. |
 | `agentprof analyze spec-violations` | Detect spans that violate configured required field contracts. |
-| `agentprof analyze multi-agent-waste` | Estimate multi-agent orchestration overhead against a configured single-agent baseline. |
+| `agentprof analyze multi-agent-waste` | Estimate multi-agent orchestration overhead against configured or observed single-agent baselines. |
 | `agentprof cost ledger` | Build `cost_ledger` from normalized span costs and print a waterfall. |
 | `agentprof report generate` | Generate Markdown and JSON reports from persisted analysis results. |
 | `agentprof report list` | List generated reports recorded in the local store. |
