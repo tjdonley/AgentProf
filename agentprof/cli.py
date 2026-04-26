@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from enum import StrEnum
 from pathlib import Path
 
 import typer
@@ -29,6 +30,12 @@ from agentprof.normalize.runner import normalize_store
 from agentprof.privacy.hashing import MissingSaltError
 from agentprof.report.runner import DEFAULT_REPORT_DIR, generate_report
 from agentprof.store.duckdb_store import DuckDBStore
+
+
+class ReportShowFormat(StrEnum):
+    markdown = "markdown"
+    json = "json"
+
 
 console = Console()
 app = typer.Typer(
@@ -327,6 +334,62 @@ def report_generate(
     console.print(f"  json: {result.report_json_path}")
 
 
+@report_app.command("list")
+def report_list() -> None:
+    """List generated reports recorded in the local store."""
+
+    config = _load_config_or_exit()
+    store = DuckDBStore(config.store.path)
+    reports = store.fetch_reports()
+
+    if not reports:
+        console.print("No reports have been generated yet.")
+        return
+
+    table = Table(title="Generated reports")
+    table.add_column("Report ID")
+    table.add_column("Project")
+    table.add_column("Issues", justify="right")
+    table.add_column("Wasted cost", justify="right")
+    table.add_column("Markdown")
+    table.add_column("JSON")
+    for report in reports:
+        table.add_row(
+            report.report_id,
+            report.project or "",
+            str(report.summary.get("issue_count", 0)),
+            _format_usd(Decimal(str(report.summary.get("total_wasted_cost_usd") or "0"))),
+            report.report_md_path or "",
+            report.report_json_path or "",
+        )
+    console.print(table)
+
+
+@report_app.command("show")
+def report_show(
+    report_id: str = typer.Argument(..., help="Report ID to show."),
+    output_format: ReportShowFormat = typer.Option(
+        ReportShowFormat.markdown,
+        "--format",
+        help="Report artifact format to print.",
+    ),
+) -> None:
+    """Print a generated report artifact."""
+
+    config = _load_config_or_exit()
+    store = DuckDBStore(config.store.path)
+    reports = store.fetch_reports(report_id=report_id)
+    if not reports:
+        console.print(f"[red]Report `{report_id}` was not found.[/red]")
+        raise typer.Exit(code=2)
+
+    path = _report_artifact_path(reports[0], output_format)
+    if path is None or not path.is_file():
+        console.print(f"[red]Report `{report_id}` {output_format} artifact was not found.[/red]")
+        raise typer.Exit(code=2)
+    typer.echo(path.read_text(encoding="utf-8"), nl=False)
+
+
 @store_app.command("stats")
 def store_stats() -> None:
     """Show local store row counts."""
@@ -425,6 +488,12 @@ def _spec_missing_label(input_fields: list[str], output_fields: list[str]) -> st
     if output_fields:
         parts.append(f"output: {', '.join(output_fields)}")
     return "; ".join(parts)
+
+
+def _report_artifact_path(report, output_format: ReportShowFormat) -> Path | None:
+    if output_format == ReportShowFormat.json:
+        return Path(report.report_json_path) if report.report_json_path else None
+    return Path(report.report_md_path) if report.report_md_path else None
 
 
 if __name__ == "__main__":

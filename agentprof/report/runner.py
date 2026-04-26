@@ -246,7 +246,7 @@ def _markdown_report(payload: dict[str, Any]) -> str:
             )
         lines.append("")
 
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"
 
 
 def _markdown_issue(issue: dict[str, Any]) -> list[str]:
