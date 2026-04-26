@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">AgentProf logo</title>
+  <desc id="desc">A trace line flowing into a database icon above the AgentProf wordmark.</desc>
+  <rect width="1200" height="760" fill="#fbfaf7"/>
+
+  <g fill="none" stroke="#232a33" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M180 330 H285"/>
+    <path d="M355 330 H470"/>
+    <path d="M555 330 H715 C742 330 743 312 743 296 V238"/>
+    <ellipse cx="310" cy="330" rx="34" ry="34" fill="#fbfaf7"/>
+    <ellipse cx="635" cy="330" rx="34" ry="34" fill="#fbfaf7"/>
+  </g>
+
+  <g fill="#232a33">
+    <circle cx="445" cy="330" r="5"/>
+    <circle cx="455" cy="292" r="5"/>
+    <circle cx="482" cy="264" r="5"/>
+    <circle cx="520" cy="254" r="5"/>
+    <circle cx="558" cy="264" r="5"/>
+    <circle cx="586" cy="292" r="5"/>
+    <circle cx="596" cy="330" r="5"/>
+    <circle cx="586" cy="368" r="5"/>
+    <circle cx="558" cy="396" r="5"/>
+    <circle cx="520" cy="406" r="5"/>
+    <circle cx="482" cy="396" r="5"/>
+    <circle cx="455" cy="368" r="5"/>
+  </g>
+
+  <g>
+    <circle cx="520" cy="330" r="36" fill="#2db7ad"/>
+    <circle cx="520" cy="330" r="21" fill="#fbfaf7"/>
+    <circle cx="520" cy="330" r="10" fill="#f8bd3b"/>
+  </g>
+
+  <g fill="none" stroke="#232a33" stroke-width="14" stroke-linejoin="round">
+    <ellipse cx="875" cy="210" rx="128" ry="58" fill="#fbfaf7"/>
+    <path d="M747 210 V360 C747 392 804 420 875 420 C946 420 1003 392 1003 360 V210"/>
+    <path d="M747 292 C747 324 804 352 875 352 C946 352 1003 324 1003 292"/>
+  </g>
+  <circle cx="957" cy="374" r="10" fill="#2db7ad"/>
+
+  <text x="600" y="590" text-anchor="middle" fill="#232a33" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="140" font-weight="400" letter-spacing="-5">AgentProf</text>
+</svg>

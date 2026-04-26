@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/agentprof-logo.svg" alt="AgentProf logo" width="520">
+</p>
+
 # AgentProf
 
 AgentProf is a local-first CLI for inspecting AI-agent traces and turning them into failure-and-waste signals.
