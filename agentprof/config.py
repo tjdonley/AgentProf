@@ -22,6 +22,13 @@ privacy:
   hash_inputs: true
   hmac_salt_env: AGENTPROF_HASH_SALT
   max_evidence_chars: 500
+  redact:
+    emails: true
+    phone_numbers: true
+    api_keys: true
+    credit_cards: true
+    jwt_tokens: true
+    custom_patterns: []
 
 sources:
   langfuse:
@@ -40,12 +47,27 @@ class ProjectConfig(BaseModel):
     environment: str = "development"
 
 
+class CustomRedactionPatternConfig(BaseModel):
+    name: str
+    regex: str
+
+
+class RedactionConfig(BaseModel):
+    emails: bool = True
+    phone_numbers: bool = True
+    api_keys: bool = True
+    credit_cards: bool = True
+    jwt_tokens: bool = True
+    custom_patterns: list[CustomRedactionPatternConfig] = Field(default_factory=list)
+
+
 class PrivacyConfig(BaseModel):
     store_raw_io: bool = False
     store_redacted_io: bool = True
     hash_inputs: bool = True
     hmac_salt_env: str = "AGENTPROF_HASH_SALT"
     max_evidence_chars: int = Field(default=500, ge=0)
+    redact: RedactionConfig = Field(default_factory=RedactionConfig)
 
 
 class LangfuseSourceConfig(BaseModel):
