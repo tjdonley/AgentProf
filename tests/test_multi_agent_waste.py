@@ -264,6 +264,48 @@ def test_cli_multi_agent_waste_validates_baseline_ratio() -> None:
     assert "baseline_ratio" in one_result.output
 
 
+def test_analyze_multi_agent_waste_rejects_non_finite_decimals(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+
+    for kwargs, field in [
+        ({"baseline_ratio": Decimal("NaN")}, "baseline_ratio"),
+        ({"baseline_ratio": Decimal("Infinity")}, "baseline_ratio"),
+        ({"min_overhead": Decimal("NaN")}, "min_overhead"),
+        ({"min_overhead": Decimal("Infinity")}, "min_overhead"),
+    ]:
+        try:
+            analyze_multi_agent_waste(store, **kwargs)
+        except ValueError as exc:
+            assert field in str(exc)
+            assert "finite" in str(exc)
+        else:
+            raise AssertionError("expected ValueError")
+
+
+def test_cli_multi_agent_waste_validates_non_finite_decimals() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+
+        baseline_result = runner.invoke(
+            app,
+            ["analyze", "multi-agent-waste", "--baseline-ratio", "NaN"],
+        )
+        overhead_result = runner.invoke(
+            app,
+            ["analyze", "multi-agent-waste", "--min-overhead", "Infinity"],
+        )
+
+    assert init_result.exit_code == 0
+    assert baseline_result.exit_code == 2
+    assert "baseline_ratio" in baseline_result.output
+    assert "finite" in baseline_result.output
+    assert overhead_result.exit_code == 2
+    assert "min_overhead" in overhead_result.output
+    assert "finite" in overhead_result.output
+
+
 def _multi_agent_spans() -> list[NormalizedSpan]:
     return [
         NormalizedSpan(

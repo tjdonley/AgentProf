@@ -33,6 +33,8 @@ def analyze_multi_agent_waste(
     min_agents: int = 2,
     min_overhead: Decimal = Decimal("0"),
 ) -> MultiAgentWasteAnalysisResult:
+    _require_finite_decimal(baseline_ratio, "baseline_ratio")
+    _require_finite_decimal(min_overhead, "min_overhead")
     if baseline_ratio <= 0 or baseline_ratio >= 1:
         raise ValueError("baseline_ratio must be greater than 0 and less than 1")
     if min_agents < 2:
@@ -98,6 +100,11 @@ def analyze_multi_agent_waste(
         ),
         findings=findings,
     )
+
+
+def _require_finite_decimal(value: Decimal, name: str) -> None:
+    if not value.is_finite():
+        raise ValueError(f"{name} must be a finite decimal value")
 
 
 def _spans_by_trace(
