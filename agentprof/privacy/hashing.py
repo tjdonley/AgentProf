@@ -43,7 +43,8 @@ UUID_RE = re.compile(
 )
 LONG_HEX_RE = re.compile(r"\b[0-9a-fA-F]{16,}\b")
 ISO_TIMESTAMP_RE = re.compile(
-    r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b"
+    r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b",
+    re.IGNORECASE,
 )
 
 
@@ -74,6 +75,10 @@ def retry_fingerprint(content: Any, salt: str | bytes) -> str:
     return hmac_sha256_hexdigest(
         canonicalize_for_hash(content, strip_volatile=True), salt
     )
+
+
+def normalize_volatile_text(value: str) -> str:
+    return _normalize_text(value, strip_volatile=True)
 
 
 def canonicalize_for_hash(content: Any, *, strip_volatile: bool = False) -> str:

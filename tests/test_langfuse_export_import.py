@@ -120,6 +120,33 @@ def test_sanitize_preserves_raw_io_only_when_raw_io_is_enabled() -> None:
     assert payload["metadata"]["Authorization"] == "[SECRET]"
 
 
+def test_sanitize_stores_retry_fingerprints_for_hashed_io(monkeypatch) -> None:
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt")
+    config = AgentProfConfig()
+
+    first = sanitize_observation_payload(
+        {
+            "id": "obs-1",
+            "input": {"query": "refund", "request_id": "req-1"},
+        },
+        config=config,
+    )
+    second = sanitize_observation_payload(
+        {
+            "id": "obs-2",
+            "input": {"query": "refund", "request_id": "req-2"},
+        },
+        config=config,
+    )
+
+    first_privacy = first["_agentprof_privacy"]
+    second_privacy = second["_agentprof_privacy"]
+
+    assert first_privacy["input_hash"] != second_privacy["input_hash"]
+    assert first_privacy["input_retry_fingerprint"] is not None
+    assert first_privacy["input_retry_fingerprint"] == second_privacy["input_retry_fingerprint"]
+
+
 def test_import_langfuse_export_stores_sanitized_raw_spans(
     monkeypatch,
 ) -> None:
@@ -167,6 +194,8 @@ def test_import_langfuse_export_stores_sanitized_raw_spans(
         assert privacy["redacted_io_stored"] is True
         assert privacy["input_hash"] is not None
         assert privacy["output_hash"] is not None
+        assert privacy["input_retry_fingerprint"] is not None
+        assert privacy["output_retry_fingerprint"] is not None
         assert "[EMAIL]" in privacy["input_preview"]
         assert "[SECRET]" in privacy["input_preview"]
 

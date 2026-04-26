@@ -41,17 +41,10 @@ def build_normalized_traces(spans: list[NormalizedSpan]) -> list[NormalizedTrace
             key=lambda span: (_datetime_sort_value(span.start_time), span.span_id),
         )
         span_ids = {span.span_id for span in trace_spans}
-        root = next(
-            (
-                span
-                for span in ordered
-                if span.parent_span_id is None or span.parent_span_id not in span_ids
-            ),
-            ordered[0] if ordered else None,
-        )
+        root = _trace_root(ordered, span_ids)
         start_time = _min_datetime(span.start_time for span in trace_spans)
         end_time = _max_datetime(span.end_time for span in trace_spans)
-        total_cost = _sum_decimals(span.cost_usd for span in trace_spans)
+        total_cost = _trace_cost_usd(trace_spans)
         total_input_tokens = _sum_ints(span.input_tokens for span in trace_spans)
         total_output_tokens = _sum_ints(span.output_tokens for span in trace_spans)
 
@@ -68,7 +61,7 @@ def build_normalized_traces(spans: list[NormalizedSpan]) -> list[NormalizedTrace
                 start_time=start_time,
                 end_time=end_time,
                 duration_ms=_trace_duration_ms(start_time, end_time),
-                outcome=_trace_outcome(trace_spans),
+                outcome=_trace_outcome(trace_spans, root=root),
                 total_cost_usd=total_cost,
                 total_input_tokens=total_input_tokens,
                 total_output_tokens=total_output_tokens,
@@ -134,14 +127,39 @@ def _is_supported_source(source: str) -> bool:
     return source == "langfuse"
 
 
-def _trace_outcome(spans: list[NormalizedSpan]) -> str:
+def _trace_outcome(spans: list[NormalizedSpan], *, root: NormalizedSpan | None) -> str:
     if not spans:
         return "unknown"
+    if root is not None and root.parent_span_id is None and root.status != "unknown":
+        return _span_status_outcome(root.status)
     if any(span.status in {"error", "timeout", "cancelled"} for span in spans):
         return "failure"
     if all(span.status == "ok" for span in spans):
         return "success"
     return "unknown"
+
+
+def _span_status_outcome(status: str) -> str:
+    if status == "ok":
+        return "success"
+    if status in {"error", "timeout", "cancelled"}:
+        return "failure"
+    return "unknown"
+
+
+def _trace_root(
+    ordered_spans: list[NormalizedSpan], span_ids: set[str]
+) -> NormalizedSpan | None:
+    explicit_root = next(
+        (span for span in ordered_spans if span.parent_span_id is None),
+        None,
+    )
+    if explicit_root is not None:
+        return explicit_root
+    return next(
+        (span for span in ordered_spans if span.parent_span_id not in span_ids),
+        ordered_spans[0] if ordered_spans else None,
+    )
 
 
 def _first_attribute(spans: list[NormalizedSpan], key: str) -> str | None:
@@ -169,6 +187,28 @@ def _min_datetime(values) -> datetime | None:
 def _max_datetime(values) -> datetime | None:
     present = [value for value in values if value is not None]
     return max(present, key=_datetime_sort_value) if present else None
+
+
+def _trace_cost_usd(spans: list[NormalizedSpan]) -> Decimal | None:
+    costed_spans = [span for span in spans if span.cost_usd is not None]
+    if not costed_spans:
+        return None
+
+    by_id = {span.span_id: span for span in spans}
+    ancestors_with_costed_descendants: set[str] = set()
+    for span in costed_spans:
+        parent_id = span.parent_span_id
+        visited: set[str] = set()
+        while parent_id and parent_id in by_id and parent_id not in visited:
+            ancestors_with_costed_descendants.add(parent_id)
+            visited.add(parent_id)
+            parent_id = by_id[parent_id].parent_span_id
+
+    return _sum_decimals(
+        span.cost_usd
+        for span in costed_spans
+        if span.span_id not in ancestors_with_costed_descendants
+    )
 
 
 def _datetime_sort_value(value: datetime | None) -> float:

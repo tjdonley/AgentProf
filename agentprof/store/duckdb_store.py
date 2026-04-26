@@ -56,6 +56,7 @@ class RawSpanRow:
 class NormalizedSpanCostRow:
     trace_id: str
     span_id: str
+    parent_span_id: str | None
     status: str
     cost_usd: Decimal | None
     cost_confidence: str
@@ -126,6 +127,8 @@ CREATE TABLE IF NOT EXISTS normalized_spans (
     error_signature TEXT,
     input_hash TEXT,
     output_hash TEXT,
+    input_retry_fingerprint TEXT,
+    output_retry_fingerprint TEXT,
     input_preview TEXT,
     output_preview TEXT,
     input_tokens BIGINT,
@@ -212,6 +215,14 @@ CREATE TABLE IF NOT EXISTS reports (
     report_json_path TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
 );
+""",
+    ),
+    Migration(
+        version=2,
+        name="add_normalized_span_retry_fingerprints",
+        sql="""
+ALTER TABLE normalized_spans ADD COLUMN IF NOT EXISTS input_retry_fingerprint TEXT;
+ALTER TABLE normalized_spans ADD COLUMN IF NOT EXISTS output_retry_fingerprint TEXT;
 """,
     ),
 )
@@ -362,6 +373,8 @@ class DuckDBStore:
                             error_signature,
                             input_hash,
                             output_hash,
+                            input_retry_fingerprint,
+                            output_retry_fingerprint,
                             input_preview,
                             output_preview,
                             input_tokens,
@@ -373,7 +386,7 @@ class DuckDBStore:
                             raw_ref
                         ) VALUES (
                             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                            ?, ?, ?, ?, ?, ?, ?, ?, ?
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                         )
                         """,
                         [
@@ -397,6 +410,8 @@ class DuckDBStore:
                             span.error_signature,
                             span.input_hash,
                             span.output_hash,
+                            span.input_retry_fingerprint,
+                            span.output_retry_fingerprint,
                             span.input_preview,
                             span.output_preview,
                             span.input_tokens,
@@ -473,7 +488,7 @@ class DuckDBStore:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT trace_id, span_id, status, cost_usd, cost_confidence
+                SELECT trace_id, span_id, parent_span_id, status, cost_usd, cost_confidence
                 FROM normalized_spans
                 ORDER BY trace_id, span_id
                 """

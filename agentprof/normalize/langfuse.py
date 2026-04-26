@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from agentprof.normalize.schema import NormalizedSpan, SpanStatus, SpanType
+from agentprof.privacy.hashing import normalize_volatile_text
 from agentprof.store.duckdb_store import RawSpanRow
 
 
@@ -109,6 +110,8 @@ def map_langfuse_raw_span(row: RawSpanRow) -> NormalizedSpan:
         error_signature=_error_signature(_string_field(payload, "statusMessage")),
         input_hash=_string_field(privacy, "input_hash"),
         output_hash=_string_field(privacy, "output_hash"),
+        input_retry_fingerprint=_string_field(privacy, "input_retry_fingerprint"),
+        output_retry_fingerprint=_string_field(privacy, "output_retry_fingerprint"),
         input_preview=_string_field(privacy, "input_preview"),
         output_preview=_string_field(privacy, "output_preview"),
         input_tokens=input_tokens,
@@ -259,5 +262,6 @@ def _float(value: Any) -> float | None:
 def _error_signature(message: str | None) -> str | None:
     if not message:
         return None
-    text = re.sub(r"\b\d+\b", "#", message.lower())
-    return " ".join(text.split())
+    text = normalize_volatile_text(message.lower())
+    text = re.sub(r"\b\d+\b", "#", text)
+    return " ".join(text.lower().split())

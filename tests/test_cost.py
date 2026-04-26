@@ -70,6 +70,96 @@ def test_build_cost_ledger_clears_stale_entries_when_costs_disappear(
     assert store.stats()["cost_ledger"] == 0
 
 
+def test_build_cost_ledger_excludes_costed_ancestors(tmp_path: Path) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    spans = [
+        NormalizedSpan(
+            trace_id="trace-cost-rollup",
+            span_id="root",
+            source="langfuse",
+            name="root",
+            span_type="root",
+            status="ok",
+            cost_usd=Decimal("0.10"),
+        ),
+        NormalizedSpan(
+            trace_id="trace-cost-rollup",
+            span_id="llm",
+            parent_span_id="root",
+            source="langfuse",
+            name="llm",
+            span_type="llm",
+            status="ok",
+            cost_usd=Decimal("0.04"),
+        ),
+        NormalizedSpan(
+            trace_id="trace-cost-rollup",
+            span_id="tool",
+            parent_span_id="root",
+            source="langfuse",
+            name="tool",
+            span_type="tool",
+            status="error",
+            cost_usd=Decimal("0.01"),
+        ),
+    ]
+    store.replace_normalized(spans=spans, traces=build_normalized_traces(spans))
+
+    result = build_cost_ledger(store)
+    records = store.fetch_cost_ledger(attribution_method=LEDGER_ATTRIBUTION_METHOD)
+
+    assert result.ledger_entries == 2
+    assert result.total_cost_usd == Decimal("0.05")
+    assert {record.span_id for record in records} == {"llm", "tool"}
+
+
+def test_build_cost_ledger_keeps_same_span_ids_separate_by_trace(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    spans = [
+        NormalizedSpan(
+            trace_id="trace-a",
+            span_id="root",
+            source="langfuse",
+            name="root",
+            span_type="root",
+            status="ok",
+            cost_usd=Decimal("0.10"),
+        ),
+        NormalizedSpan(
+            trace_id="trace-a",
+            span_id="child",
+            parent_span_id="root",
+            source="langfuse",
+            name="child",
+            span_type="llm",
+            status="ok",
+            cost_usd=Decimal("0.04"),
+        ),
+        NormalizedSpan(
+            trace_id="trace-b",
+            span_id="root",
+            source="langfuse",
+            name="root",
+            span_type="root",
+            status="ok",
+            cost_usd=Decimal("0.03"),
+        ),
+    ]
+    store.replace_normalized(spans=spans, traces=build_normalized_traces(spans))
+
+    result = build_cost_ledger(store)
+    records = store.fetch_cost_ledger(attribution_method=LEDGER_ATTRIBUTION_METHOD)
+
+    assert result.ledger_entries == 2
+    assert result.total_cost_usd == Decimal("0.07")
+    assert {(record.trace_id, record.span_id) for record in records} == {
+        ("trace-a", "child"),
+        ("trace-b", "root"),
+    }
+
+
 def test_replace_cost_ledger_rejects_mismatched_attribution_method(
     tmp_path: Path,
 ) -> None:

@@ -55,6 +55,8 @@ def test_map_langfuse_raw_span_preserves_metrics_privacy_and_trace_attributes() 
                 "_agentprof_privacy": {
                     "input_hash": "input-hash",
                     "output_hash": "output-hash",
+                    "input_retry_fingerprint": "input-retry-fingerprint",
+                    "output_retry_fingerprint": "output-retry-fingerprint",
                     "input_preview": "redacted input",
                     "output_preview": "redacted output",
                 },
@@ -81,10 +83,28 @@ def test_map_langfuse_raw_span_preserves_metrics_privacy_and_trace_attributes() 
     assert span.cost_usd == Decimal("0.00123")
     assert span.cost_confidence == "source"
     assert span.input_hash == "input-hash"
+    assert span.input_retry_fingerprint == "input-retry-fingerprint"
+    assert span.output_retry_fingerprint == "output-retry-fingerprint"
     assert span.output_preview == "redacted output"
     assert span.attributes["promptName"] == "refund_flow"
     assert span.attributes["sessionId"] == "session-1"
     assert span.attributes["environment"] == "prod"
+
+
+def test_langfuse_error_signature_ignores_volatile_values() -> None:
+    first = _mapped_status_message(
+        "Connection 504 to 0123456789abcdef failed at "
+        "2026-04-26T10:11:12Z for "
+        "11111111-1111-1111-1111-111111111111"
+    )
+    second = _mapped_status_message(
+        "Connection 429 to fedcba9876543210 failed at "
+        "2026-04-26T10:13:14Z for "
+        "22222222-2222-2222-2222-222222222222"
+    )
+
+    assert first.error_signature == second.error_signature
+    assert first.error_signature == "connection # to [hex] failed at [timestamp] for [uuid]"
 
 
 def test_top_level_langfuse_generation_counts_as_model_call() -> None:
@@ -146,12 +166,145 @@ def test_build_normalized_traces_rolls_up_tree_metrics_and_outcome() -> None:
     assert trace.environment == "prod"
     assert trace.version == "2026.04.26"
     assert trace.duration_ms == 5000.0
-    assert trace.outcome == "failure"
+    assert trace.outcome == "success"
     assert trace.total_cost_usd == Decimal("0.03")
     assert trace.total_input_tokens == 10
     assert trace.total_output_tokens == 20
     assert trace.total_tool_calls == 1
     assert trace.total_model_calls == 1
+
+
+def test_trace_cost_rollup_excludes_costed_ancestors() -> None:
+    spans = [
+        NormalizedSpan(
+            trace_id="trace-cost-rollup",
+            span_id="root",
+            source="langfuse",
+            name="root",
+            span_type="root",
+            status="ok",
+            cost_usd=Decimal("0.10"),
+        ),
+        NormalizedSpan(
+            trace_id="trace-cost-rollup",
+            span_id="llm",
+            parent_span_id="root",
+            source="langfuse",
+            name="llm",
+            span_type="llm",
+            status="ok",
+            cost_usd=Decimal("0.04"),
+        ),
+        NormalizedSpan(
+            trace_id="trace-cost-rollup",
+            span_id="tool",
+            parent_span_id="root",
+            source="langfuse",
+            name="tool",
+            span_type="tool",
+            status="ok",
+            cost_usd=Decimal("0.01"),
+        ),
+    ]
+
+    trace = build_normalized_traces(spans)[0]
+
+    assert trace.total_cost_usd == Decimal("0.05")
+
+
+def test_trace_outcome_falls_back_to_child_failures_when_root_unknown() -> None:
+    spans = [
+        NormalizedSpan(
+            trace_id="trace-unknown-root",
+            span_id="root",
+            source="langfuse",
+            name="root",
+            span_type="root",
+            status="unknown",
+        ),
+        NormalizedSpan(
+            trace_id="trace-unknown-root",
+            span_id="tool",
+            parent_span_id="root",
+            source="langfuse",
+            name="tool",
+            span_type="tool",
+            status="error",
+        ),
+    ]
+
+    trace = build_normalized_traces(spans)[0]
+
+    assert trace.outcome == "failure"
+
+
+def test_trace_outcome_does_not_trust_dangling_parent_as_root() -> None:
+    spans = [
+        NormalizedSpan(
+            trace_id="trace-dangling-parent",
+            span_id="orphan",
+            parent_span_id="missing-parent",
+            source="langfuse",
+            name="orphan",
+            span_type="tool",
+            start_time=_dt("2026-04-26T10:00:00+00:00"),
+            status="ok",
+        ),
+        NormalizedSpan(
+            trace_id="trace-dangling-parent",
+            span_id="failed-child",
+            parent_span_id="missing-root",
+            source="langfuse",
+            name="failed_child",
+            span_type="tool",
+            start_time=_dt("2026-04-26T10:00:01+00:00"),
+            status="error",
+        ),
+    ]
+
+    trace = build_normalized_traces(spans)[0]
+
+    assert trace.root_span_id == "orphan"
+    assert trace.outcome == "failure"
+
+
+def test_trace_root_prefers_explicit_root_over_earlier_orphan() -> None:
+    spans = [
+        NormalizedSpan(
+            trace_id="trace-explicit-root",
+            span_id="orphan",
+            parent_span_id="missing-parent",
+            source="langfuse",
+            name="orphan",
+            span_type="tool",
+            start_time=_dt("2026-04-26T10:00:00+00:00"),
+            status="ok",
+        ),
+        NormalizedSpan(
+            trace_id="trace-explicit-root",
+            span_id="root",
+            source="langfuse",
+            name="root",
+            span_type="root",
+            start_time=_dt("2026-04-26T10:00:01+00:00"),
+            status="ok",
+        ),
+        NormalizedSpan(
+            trace_id="trace-explicit-root",
+            span_id="failed-child",
+            parent_span_id="root",
+            source="langfuse",
+            name="failed_child",
+            span_type="tool",
+            start_time=_dt("2026-04-26T10:00:02+00:00"),
+            status="error",
+        ),
+    ]
+
+    trace = build_normalized_traces(spans)[0]
+
+    assert trace.root_span_id == "root"
+    assert trace.outcome == "success"
 
 
 def test_compute_data_quality_reports_coverage() -> None:
@@ -208,18 +361,19 @@ def test_normalize_store_persists_normalized_rows_idempotently(tmp_path: Path) -
         ).fetchone()
         spans = connection.execute(
             """
-            SELECT span_id, span_type, status, input_tokens, output_tokens, cost_confidence
+            SELECT span_id, span_type, status, input_tokens, output_tokens,
+                   cost_confidence, input_retry_fingerprint, output_retry_fingerprint
             FROM normalized_spans
             WHERE trace_id = 'trace-store'
             ORDER BY span_id
             """
         ).fetchall()
 
-    assert trace == ("root", "failure", 1, 1, 7, 11, Decimal("0.015000000"))
+    assert trace == ("root", "success", 1, 1, 7, 11, Decimal("0.015000000"))
     assert spans == [
-        ("llm", "llm", "ok", 7, 11, "source"),
-        ("root", "root", "ok", None, None, "unknown"),
-        ("tool", "tool", "error", None, None, "unknown"),
+        ("llm", "llm", "ok", 7, 11, "source", "retry-in", "retry-out"),
+        ("root", "root", "ok", None, None, "unknown", None, None),
+        ("tool", "tool", "error", None, None, "unknown", None, None),
     ]
 
 
@@ -325,6 +479,10 @@ def _raw_records() -> list[RawSpanRecord]:
             "model": "gpt-4o-mini",
             "usageDetails": {"input": 7, "output": 11, "total": 18},
             "costDetails": {"total": "0.015"},
+            "_agentprof_privacy": {
+                "input_retry_fingerprint": "retry-in",
+                "output_retry_fingerprint": "retry-out",
+            },
         },
         {
             "id": "tool",
@@ -354,3 +512,26 @@ def _raw_records() -> list[RawSpanRecord]:
 
 def _dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def _mapped_status_message(message: str) -> NormalizedSpan:
+    return map_langfuse_raw_span(
+        RawSpanRow(
+            source="langfuse",
+            source_id="obs-1",
+            trace_id="trace-1",
+            span_id="obs-1",
+            parent_span_id=None,
+            payload_json=json.dumps(
+                {
+                    "id": "obs-1",
+                    "traceId": "trace-1",
+                    "type": "SPAN",
+                    "name": "root",
+                    "level": "ERROR",
+                    "statusMessage": message,
+                }
+            ),
+            raw_ref="fixture",
+        )
+    )

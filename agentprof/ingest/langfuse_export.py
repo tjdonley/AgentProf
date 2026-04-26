@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from agentprof.config import AgentProfConfig
-from agentprof.privacy.hashing import content_hash, salt_from_env
+from agentprof.privacy.hashing import content_hash, retry_fingerprint, salt_from_env
 from agentprof.privacy.redactor import evidence_preview, redact_value, rules_from_config
 from agentprof.store.duckdb_store import DuckDBStore, RawSpanRecord
 
@@ -152,6 +152,8 @@ def _privacy_metadata(
         "redacted_io_stored": privacy.store_redacted_io,
         "input_hash": None,
         "output_hash": None,
+        "input_retry_fingerprint": None,
+        "output_retry_fingerprint": None,
         "input_preview": None,
         "output_preview": None,
     }
@@ -159,8 +161,10 @@ def _privacy_metadata(
     if privacy.hash_inputs and salt is not None:
         if raw_input is not None:
             metadata["input_hash"] = content_hash(raw_input, salt)
+            metadata["input_retry_fingerprint"] = retry_fingerprint(raw_input, salt)
         if raw_output is not None:
             metadata["output_hash"] = content_hash(raw_output, salt)
+            metadata["output_retry_fingerprint"] = retry_fingerprint(raw_output, salt)
 
     if privacy.store_redacted_io:
         if raw_input is not None:
