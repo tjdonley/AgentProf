@@ -6,9 +6,9 @@
 
 AgentProf is a local-first CLI for inspecting AI-agent traces and turning them into failure-and-waste signals.
 
-The current MVP imports Langfuse observation exports, sanitizes persisted payloads, normalizes spans/traces into DuckDB, runs deterministic analyzers, builds a cost ledger waterfall from normalized span costs, and generates local Markdown/JSON reports. The longer-term goal is polished shareable reports that explain what failed, what wasted money, and what to fix.
+The current MVP imports Langfuse observation exports, sanitizes persisted payloads, normalizes spans/traces into DuckDB, runs deterministic analyzers, builds a cost ledger waterfall from normalized span costs, and generates local Markdown/JSON reports. The longer-term goal is broader source support, more analyzers, and polished shareable reports that explain what failed, what wasted money, and what to fix.
 
-This repository is early MVP software. It is usable for local import, analysis, and report experiments, but broader analyzers and polished reporting are still being built.
+This repository is early MVP software. It is usable for local Langfuse export import, normalization, analysis, cost attribution, and report generation. Additional sources, analyzers, and report formats are still being built.
 
 ## What Works Today
 
@@ -24,10 +24,11 @@ This repository is early MVP software. It is usable for local import, analysis, 
 - Detect retry loops where the same failing call repeats with the same input fingerprint and error signature.
 - Detect configured tool/spec contract violations from normalized redacted previews and error messages.
 - Generate local Markdown and JSON reports from persisted issues, evidence, and costs.
+- List and show generated reports from the local store.
 
-## Not Built Yet
+## Planned / Not Built Yet
 
-- Deterministic failure/waste analyzers beyond retry-loop and spec-violation detection.
+- Additional deterministic failure/waste analyzers beyond retry-loop and spec-violation detection.
 - HTML report generation.
 - Phoenix, OpenTelemetry, or direct API ingestion.
 - Baseline/diff workflows and CI integration.
@@ -52,6 +53,7 @@ uv run agentprof analyze retry-loops
 uv run agentprof analyze spec-violations
 uv run agentprof cost ledger
 uv run agentprof report generate
+uv run agentprof report list
 uv run agentprof store stats
 ```
 
@@ -131,7 +133,17 @@ uv run agentprof report generate
 
 This writes Markdown and JSON report files under `.agentprof/reports/` and stores report metadata in the `reports` table.
 
-9. Inspect store row counts.
+9. List or inspect generated reports.
+
+```bash
+uv run agentprof report list
+uv run agentprof report show latest
+uv run agentprof report show latest --format json
+```
+
+Use a stable `--report-id` when generating reports if you want a predictable ID such as `latest`.
+
+10. Inspect store row counts.
 
 ```bash
 uv run agentprof store stats
