@@ -29,9 +29,10 @@ def analyze_retry_loops(
         raise ValueError("min_attempts must be at least 2")
 
     spans = store.fetch_normalized_spans_for_analysis()
+    cost_leaf_keys = _cost_leaf_keys(spans)
     groups = _retry_groups(spans)
     finding_groups = [
-        (key, _finding_from_group(group))
+        (key, _finding_from_group(group, cost_leaf_keys=cost_leaf_keys))
         for key, group in sorted(groups.items(), key=lambda item: _sortable_key(item[0]))
         if len(group) >= min_attempts
     ]
@@ -45,7 +46,11 @@ def analyze_retry_loops(
     costs = [
         record
         for key, finding in finding_groups
-        for record in _costs_from_finding(finding, groups[key])
+        for record in _costs_from_finding(
+            finding,
+            groups[key],
+            cost_leaf_keys=cost_leaf_keys,
+        )
     ]
 
     store.replace_analysis_results(
@@ -115,7 +120,11 @@ def _sortable_key(
     return (trace_id, parent_span_id or "", name, retry_fingerprint, error_signature)
 
 
-def _finding_from_group(group: list[NormalizedSpanAnalysisRow]) -> RetryLoopFinding:
+def _finding_from_group(
+    group: list[NormalizedSpanAnalysisRow],
+    *,
+    cost_leaf_keys: set[tuple[str, str]],
+) -> RetryLoopFinding:
     first = group[0]
     wasted = group[1:]
     return RetryLoopFinding(
@@ -129,8 +138,8 @@ def _finding_from_group(group: list[NormalizedSpanAnalysisRow]) -> RetryLoopFind
         wasted_span_ids=[span.span_id for span in wasted],
         first_seen=_min_datetime(span.start_time for span in group),
         last_seen=_max_datetime((span.end_time or span.start_time) for span in group),
-        total_cost_usd=_sum_costs(span.cost_usd for span in group),
-        wasted_cost_usd=_sum_costs(span.cost_usd for span in wasted),
+        total_cost_usd=_sum_leaf_costs(group, cost_leaf_keys),
+        wasted_cost_usd=_sum_leaf_costs(wasted, cost_leaf_keys),
         error_signature=first.error_signature,
     )
 
@@ -182,7 +191,10 @@ def _evidence_from_finding(
 
 
 def _costs_from_finding(
-    finding: RetryLoopFinding, group: list[NormalizedSpanAnalysisRow]
+    finding: RetryLoopFinding,
+    group: list[NormalizedSpanAnalysisRow],
+    *,
+    cost_leaf_keys: set[tuple[str, str]],
 ) -> list[CostLedgerRecord]:
     return [
         CostLedgerRecord(
@@ -195,7 +207,7 @@ def _costs_from_finding(
             confidence=span.cost_confidence,
         )
         for span in group[1:]
-        if span.cost_usd is not None
+        if span.cost_usd is not None and _span_key(span) in cost_leaf_keys
     ]
 
 
@@ -231,6 +243,38 @@ def _datetime_sort_value(value: datetime | None) -> float:
     if value is None:
         return float("inf")
     return value.timestamp()
+
+
+def _cost_leaf_keys(spans: list[NormalizedSpanAnalysisRow]) -> set[tuple[str, str]]:
+    costed_spans = [span for span in spans if span.cost_usd is not None]
+    by_id = {_span_key(span): span for span in spans}
+    ancestors_with_costed_descendants: set[tuple[str, str]] = set()
+    for span in costed_spans:
+        parent_id = span.parent_span_id
+        trace_id = span.trace_id
+        visited: set[str] = set()
+        while parent_id and (trace_id, parent_id) in by_id and parent_id not in visited:
+            ancestors_with_costed_descendants.add((trace_id, parent_id))
+            visited.add(parent_id)
+            parent_id = by_id[(trace_id, parent_id)].parent_span_id
+
+    return {
+        _span_key(span)
+        for span in costed_spans
+        if _span_key(span) not in ancestors_with_costed_descendants
+    }
+
+
+def _sum_leaf_costs(
+    spans: list[NormalizedSpanAnalysisRow], cost_leaf_keys: set[tuple[str, str]]
+) -> Decimal:
+    return _sum_costs(
+        span.cost_usd for span in spans if _span_key(span) in cost_leaf_keys
+    )
+
+
+def _span_key(span: NormalizedSpanAnalysisRow) -> tuple[str, str]:
+    return span.trace_id, span.span_id
 
 
 def _sum_costs(values) -> Decimal:

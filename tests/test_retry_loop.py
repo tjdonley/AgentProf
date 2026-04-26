@@ -123,6 +123,86 @@ def test_analyze_retry_loops_handles_mixed_parent_keys(tmp_path: Path) -> None:
     ]
 
 
+def test_analyze_retry_loops_excludes_non_leaf_retry_costs(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    spans = [
+        NormalizedSpan(
+            trace_id="trace-retry-aggregate-cost",
+            span_id="root",
+            source="langfuse",
+            name="support_agent",
+            span_type="root",
+            status="ok",
+        ),
+        NormalizedSpan(
+            trace_id="trace-retry-aggregate-cost",
+            span_id="attempt-1",
+            parent_span_id="root",
+            source="langfuse",
+            name="refund_policy_lookup",
+            span_type="tool",
+            start_time=_dt("2026-04-26T10:00:01+00:00"),
+            status="error",
+            error_signature="missing required field region",
+            input_retry_fingerprint="same-input",
+            cost_usd=Decimal("0.100"),
+            cost_confidence="source",
+        ),
+        NormalizedSpan(
+            trace_id="trace-retry-aggregate-cost",
+            span_id="attempt-1-child",
+            parent_span_id="attempt-1",
+            source="langfuse",
+            name="http_call",
+            span_type="custom",
+            start_time=_dt("2026-04-26T10:00:01.500000+00:00"),
+            status="error",
+            cost_usd=Decimal("0.010"),
+            cost_confidence="source",
+        ),
+        NormalizedSpan(
+            trace_id="trace-retry-aggregate-cost",
+            span_id="attempt-2",
+            parent_span_id="root",
+            source="langfuse",
+            name="refund_policy_lookup",
+            span_type="tool",
+            start_time=_dt("2026-04-26T10:00:02+00:00"),
+            status="error",
+            error_signature="missing required field region",
+            input_retry_fingerprint="same-input",
+            cost_usd=Decimal("0.200"),
+            cost_confidence="source",
+        ),
+        NormalizedSpan(
+            trace_id="trace-retry-aggregate-cost",
+            span_id="attempt-2-child",
+            parent_span_id="attempt-2",
+            source="langfuse",
+            name="http_call",
+            span_type="custom",
+            start_time=_dt("2026-04-26T10:00:02.500000+00:00"),
+            status="error",
+            cost_usd=Decimal("0.020"),
+            cost_confidence="source",
+        ),
+    ]
+    store.replace_normalized(spans=spans, traces=build_normalized_traces(spans))
+
+    result = analyze_retry_loops(store)
+    issues = store.fetch_issues(kind=ISSUE_KIND)
+    costs = store.fetch_cost_ledger(attribution_method=ATTRIBUTION_METHOD)
+
+    assert result.retry_loops == 1
+    assert result.findings[0].total_cost_usd == Decimal("0")
+    assert result.findings[0].wasted_cost_usd == Decimal("0")
+    assert issues[0].total_cost_usd == Decimal("0E-9")
+    assert issues[0].wasted_cost_usd == Decimal("0E-9")
+    assert costs == []
+
+
 def test_analyze_retry_loops_requires_min_attempts_at_least_two(
     tmp_path: Path,
 ) -> None:
