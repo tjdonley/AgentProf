@@ -1,68 +1,127 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="560" viewBox="0 0 1180 560" role="img" aria-labelledby="title desc">
-  <title id="title">AgentProf workflow</title>
-  <desc id="desc">Langfuse exports flow through local privacy processing, DuckDB storage, deterministic analyzers, cost attribution, and report generation.</desc>
-  <rect width="1180" height="560" rx="34" fill="#fbfaf7"/>
-  <rect x="34" y="34" width="1112" height="492" rx="28" fill="#ffffff" stroke="#d8d2c8"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">AgentProf local trace profiling workflow</title>
+  <desc id="desc">Exported agent observations pass through local privacy handling, a DuckDB store, deterministic analyzers, cost attribution, and Markdown/JSON report generation.</desc>
+  <defs>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M28 0H0V28" fill="none" stroke="#eee8dc" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="paperFade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f7f2e8"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0 0L9 4.5L0 9Z" fill="#9c9284"/>
+    </marker>
+    <style>
+      .font { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .h1 { fill: #232a33; font-size: 34px; font-weight: 750; }
+      .sub { fill: #66717f; font-size: 16px; }
+      .label { fill: #232a33; font-size: 18px; font-weight: 760; }
+      .small { fill: #66717f; font-size: 13px; }
+      .tiny { fill: #7d8793; font-size: 11px; }
+      .chip { fill: #232a33; font-size: 12px; font-weight: 700; }
+      .stroke { stroke: #232a33; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
 
-  <text x="70" y="92" fill="#232a33" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="34" font-weight="700">Local trace profiling workflow</text>
-  <text x="70" y="126" fill="#5f6874" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="16">Import exports, keep the data local, and turn spans into evidence-backed waste reports.</text>
+  <rect width="1200" height="620" rx="34" fill="#fbfaf7"/>
+  <rect width="1200" height="620" rx="34" fill="url(#grid)" opacity="0.78"/>
+  <rect x="32" y="30" width="1136" height="560" rx="30" fill="url(#paperFade)" stroke="#d8d2c8"/>
 
-  <g font-family="Inter, ui-sans-serif, system-ui, sans-serif">
-    <g transform="translate(70 186)">
-      <rect width="168" height="142" rx="22" fill="#f8fafc" stroke="#cbd5e1"/>
-      <circle cx="44" cy="42" r="18" fill="#38bdf8"/>
-      <path d="M34 42 H54 M44 32 V52" stroke="#0f172a" stroke-width="4" stroke-linecap="round"/>
-      <text x="24" y="84" fill="#0f172a" font-size="19" font-weight="700">Import</text>
-      <text x="24" y="112" fill="#475569" font-size="13">Langfuse JSON</text>
-      <text x="24" y="132" fill="#475569" font-size="13">or CSV exports</text>
+  <g class="font">
+    <text x="72" y="92" class="h1">Local trace profiling, from export to evidence</text>
+    <text x="72" y="124" class="sub">AgentProf turns Langfuse observations into a private DuckDB store, deterministic findings, and report artifacts.</text>
+
+    <g transform="translate(70 170)">
+      <rect width="200" height="236" rx="22" fill="#ffffff" stroke="#d8d2c8"/>
+      <text x="24" y="38" class="label">Trace export</text>
+      <text x="24" y="64" class="small">JSON or CSV observations</text>
+      <rect x="24" y="90" width="152" height="104" rx="14" fill="#f7fafb" stroke="#d7dee7"/>
+      <path d="M46 116H110M46 140H144M46 164H122" stroke="#66717f" stroke-width="7" stroke-linecap="round"/>
+      <circle cx="152" cy="116" r="10" fill="#2db7ad"/>
+      <circle cx="152" cy="140" r="10" fill="#f8bd3b"/>
+      <circle cx="152" cy="164" r="10" fill="#f26f5b"/>
+      <text x="24" y="219" class="tiny">source: langfuse</text>
     </g>
 
-    <path d="M252 257 H318" stroke="#9aa4b2" stroke-width="4" stroke-linecap="round"/>
-    <path d="M309 246 L320 257 L309 268" fill="none" stroke="#9aa4b2" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M292 288H354" fill="none" stroke="#9c9284" stroke-width="4" marker-end="url(#arrow)"/>
 
-    <g transform="translate(332 186)">
-      <rect width="168" height="142" rx="22" fill="#effdf8" stroke="#99f6e4"/>
-      <path d="M42 27 C58 27 70 39 70 55 C70 75 54 88 42 98 C30 88 14 75 14 55 C14 39 26 27 42 27 Z" fill="#2dd4bf"/>
-      <path d="M35 57 L41 64 L54 47" fill="none" stroke="#0f172a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="24" y="84" fill="#0f172a" font-size="19" font-weight="700">Sanitize</text>
-      <text x="24" y="112" fill="#475569" font-size="13">Redact secrets</text>
-      <text x="24" y="132" fill="#475569" font-size="13">and hash I/O</text>
+    <g transform="translate(376 170)">
+      <rect width="220" height="236" rx="22" fill="#ffffff" stroke="#d8d2c8"/>
+      <text x="24" y="38" class="label">Privacy pass</text>
+      <text x="24" y="64" class="small">Redact, hash, preview</text>
+      <path d="M110 88C144 88 168 101 168 101V145C168 178 142 195 110 206C78 195 52 178 52 145V101C52 101 76 88 110 88Z" fill="#dff4f1" stroke="#2db7ad" stroke-width="3"/>
+      <path d="M91 146L105 160L133 126" fill="none" stroke="#232a33" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="24" y="204" width="72" height="24" rx="12" fill="#232a33"/>
+      <text x="60" y="221" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="700">secrets</text>
+      <rect x="104" y="204" width="92" height="24" rx="12" fill="#fff2c2"/>
+      <text x="150" y="221" text-anchor="middle" fill="#232a33" font-size="12" font-weight="700">HMAC I/O</text>
     </g>
 
-    <path d="M514 257 H580" stroke="#9aa4b2" stroke-width="4" stroke-linecap="round"/>
-    <path d="M571 246 L582 257 L571 268" fill="none" stroke="#9aa4b2" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M618 288H680" fill="none" stroke="#9c9284" stroke-width="4" marker-end="url(#arrow)"/>
 
-    <g transform="translate(594 186)">
-      <rect width="168" height="142" rx="22" fill="#fff7ed" stroke="#fed7aa"/>
-      <ellipse cx="48" cy="37" rx="28" ry="13" fill="#f59e0b" stroke="#92400e" stroke-width="3"/>
-      <path d="M20 37 V76 C20 84 32 91 48 91 C64 91 76 84 76 76 V37" fill="#fbbf24" stroke="#92400e" stroke-width="3"/>
-      <path d="M20 56 C20 64 32 71 48 71 C64 71 76 64 76 56" fill="none" stroke="#92400e" stroke-width="3"/>
-      <text x="24" y="112" fill="#0f172a" font-size="19" font-weight="700">Normalize</text>
-      <text x="24" y="132" fill="#475569" font-size="13">Canonical spans</text>
+    <g transform="translate(704 154)">
+      <rect width="264" height="268" rx="24" fill="#232a33"/>
+      <text x="28" y="46" fill="#ffffff" font-size="22" font-weight="760">Local DuckDB store</text>
+      <text x="28" y="72" fill="#cfd7df" font-size="13">normalized spans, traces, issues</text>
+      <ellipse cx="132" cy="112" rx="76" ry="26" fill="#fbfaf7" stroke="#f8bd3b" stroke-width="4"/>
+      <path d="M56 112V178C56 194 90 207 132 207C174 207 208 194 208 178V112" fill="#fff2c2" stroke="#f8bd3b" stroke-width="4"/>
+      <path d="M56 145C56 161 90 174 132 174C174 174 208 161 208 145" fill="none" stroke="#d89d18" stroke-width="3"/>
+      <g fill="#ffffff" font-size="12" font-weight="700">
+        <rect x="28" y="222" width="74" height="24" rx="12" fill="#3d4652"/>
+        <text x="65" y="239" text-anchor="middle">raw</text>
+        <rect x="110" y="222" width="74" height="24" rx="12" fill="#3d4652"/>
+        <text x="147" y="239" text-anchor="middle">spans</text>
+        <rect x="192" y="222" width="44" height="24" rx="12" fill="#2db7ad"/>
+        <text x="214" y="239" text-anchor="middle">cost</text>
+      </g>
     </g>
 
-    <path d="M776 257 H842" stroke="#9aa4b2" stroke-width="4" stroke-linecap="round"/>
-    <path d="M833 246 L844 257 L833 268" fill="none" stroke="#9aa4b2" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M990 288H1002" fill="none" stroke="#9c9284" stroke-width="4" marker-end="url(#arrow)"/>
 
-    <g transform="translate(856 186)">
-      <rect width="210" height="142" rx="22" fill="#f5f3ff" stroke="#ddd6fe"/>
-      <circle cx="44" cy="42" r="17" fill="#8b5cf6"/>
-      <circle cx="85" cy="42" r="17" fill="#a78bfa"/>
-      <circle cx="126" cy="42" r="17" fill="#c4b5fd"/>
-      <path d="M61 42 H68 M102 42 H109" stroke="#312e81" stroke-width="4" stroke-linecap="round"/>
-      <text x="24" y="84" fill="#0f172a" font-size="19" font-weight="700">Analyze</text>
-      <text x="24" y="112" fill="#475569" font-size="13">Retries, specs,</text>
-      <text x="24" y="132" fill="#475569" font-size="13">multi-agent waste</text>
+    <g transform="translate(684 458)">
+      <rect width="304" height="72" rx="18" fill="#ffffff" stroke="#d8d2c8"/>
+      <text x="24" y="30" fill="#66717f" font-size="12" font-weight="700">COST LEDGER</text>
+      <rect x="24" y="42" width="92" height="10" rx="5" fill="#2db7ad"/>
+      <rect x="124" y="42" width="62" height="10" rx="5" fill="#f26f5b"/>
+      <rect x="194" y="42" width="58" height="10" rx="5" fill="#f8bd3b"/>
+      <text x="264" y="55" class="tiny">leaf spans</text>
     </g>
-  </g>
 
-  <g font-family="Inter, ui-sans-serif, system-ui, sans-serif">
-    <rect x="190" y="398" width="800" height="72" rx="22" fill="#0f172a"/>
-    <text x="226" y="428" fill="#cbd5e1" font-size="14">Output artifacts</text>
-    <text x="226" y="454" fill="#f8fafc" font-size="21" font-weight="700">Markdown report</text>
-    <text x="486" y="454" fill="#f8fafc" font-size="21" font-weight="700">JSON evidence</text>
-    <text x="724" y="454" fill="#f8fafc" font-size="21" font-weight="700">Cost visuals</text>
-    <circle cx="454" cy="446" r="5" fill="#38bdf8"/>
-    <circle cx="690" cy="446" r="5" fill="#38bdf8"/>
+    <g transform="translate(1008 150)">
+      <rect width="120" height="276" rx="22" fill="#ffffff" stroke="#d8d2c8"/>
+      <text x="24" y="39" class="label">Report</text>
+      <text x="24" y="64" class="small">local files</text>
+      <rect x="24" y="88" width="72" height="54" rx="12" fill="#dff4f1" stroke="#2db7ad"/>
+      <path d="M41 110H78M41 124H68" stroke="#232a33" stroke-width="5" stroke-linecap="round"/>
+      <text x="60" y="171" text-anchor="middle" class="chip">MD</text>
+      <rect x="30" y="185" width="60" height="26" rx="13" fill="#fff2c2"/>
+      <text x="60" y="203" text-anchor="middle" class="chip">JSON</text>
+      <rect x="30" y="222" width="60" height="26" rx="13" fill="#f6dfd8"/>
+      <text x="60" y="240" text-anchor="middle" class="chip">SVG</text>
+    </g>
+
+    <g transform="translate(72 455)">
+      <text x="0" y="0" fill="#66717f" font-size="13" font-weight="700">DETERMINISTIC ANALYZERS</text>
+      <g transform="translate(0 18)">
+        <rect width="168" height="72" rx="16" fill="#ffffff" stroke="#d8d2c8"/>
+        <path d="M28 32C40 20 58 20 70 32C82 44 100 44 112 32" fill="none" stroke="#f26f5b" stroke-width="5" stroke-linecap="round"/>
+        <text x="24" y="58" class="small">retry loops</text>
+      </g>
+      <g transform="translate(190 18)">
+        <rect width="168" height="72" rx="16" fill="#ffffff" stroke="#d8d2c8"/>
+        <path d="M34 19H88M34 33H116M34 47H76" stroke="#232a33" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="124" cy="33" r="14" fill="#f8bd3b"/>
+        <text x="24" y="58" class="small">spec contracts</text>
+      </g>
+      <g transform="translate(380 18)">
+        <rect width="214" height="72" rx="16" fill="#ffffff" stroke="#d8d2c8"/>
+        <circle cx="36" cy="32" r="13" fill="#2db7ad"/>
+        <circle cx="76" cy="32" r="13" fill="#f8bd3b"/>
+        <circle cx="116" cy="32" r="13" fill="#f26f5b"/>
+        <path d="M49 32H63M89 32H103" stroke="#232a33" stroke-width="4" stroke-linecap="round"/>
+        <text x="24" y="58" class="small">multi-agent overhead</text>
+      </g>
+    </g>
   </g>
 </svg>
