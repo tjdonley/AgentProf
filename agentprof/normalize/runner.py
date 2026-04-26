@@ -41,14 +41,7 @@ def build_normalized_traces(spans: list[NormalizedSpan]) -> list[NormalizedTrace
             key=lambda span: (_datetime_sort_value(span.start_time), span.span_id),
         )
         span_ids = {span.span_id for span in trace_spans}
-        root = next(
-            (
-                span
-                for span in ordered
-                if span.parent_span_id is None or span.parent_span_id not in span_ids
-            ),
-            ordered[0] if ordered else None,
-        )
+        root = _trace_root(ordered, span_ids)
         start_time = _min_datetime(span.start_time for span in trace_spans)
         end_time = _max_datetime(span.end_time for span in trace_spans)
         total_cost = _trace_cost_usd(trace_spans)
@@ -137,7 +130,7 @@ def _is_supported_source(source: str) -> bool:
 def _trace_outcome(spans: list[NormalizedSpan], *, root: NormalizedSpan | None) -> str:
     if not spans:
         return "unknown"
-    if root is not None and root.status != "unknown":
+    if root is not None and root.parent_span_id is None and root.status != "unknown":
         return _span_status_outcome(root.status)
     if any(span.status in {"error", "timeout", "cancelled"} for span in spans):
         return "failure"
@@ -152,6 +145,21 @@ def _span_status_outcome(status: str) -> str:
     if status in {"error", "timeout", "cancelled"}:
         return "failure"
     return "unknown"
+
+
+def _trace_root(
+    ordered_spans: list[NormalizedSpan], span_ids: set[str]
+) -> NormalizedSpan | None:
+    explicit_root = next(
+        (span for span in ordered_spans if span.parent_span_id is None),
+        None,
+    )
+    if explicit_root is not None:
+        return explicit_root
+    return next(
+        (span for span in ordered_spans if span.parent_span_id not in span_ids),
+        ordered_spans[0] if ordered_spans else None,
+    )
 
 
 def _first_attribute(spans: list[NormalizedSpan], key: str) -> str | None:

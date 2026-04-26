@@ -238,6 +238,75 @@ def test_trace_outcome_falls_back_to_child_failures_when_root_unknown() -> None:
     assert trace.outcome == "failure"
 
 
+def test_trace_outcome_does_not_trust_dangling_parent_as_root() -> None:
+    spans = [
+        NormalizedSpan(
+            trace_id="trace-dangling-parent",
+            span_id="orphan",
+            parent_span_id="missing-parent",
+            source="langfuse",
+            name="orphan",
+            span_type="tool",
+            start_time=_dt("2026-04-26T10:00:00+00:00"),
+            status="ok",
+        ),
+        NormalizedSpan(
+            trace_id="trace-dangling-parent",
+            span_id="failed-child",
+            parent_span_id="missing-root",
+            source="langfuse",
+            name="failed_child",
+            span_type="tool",
+            start_time=_dt("2026-04-26T10:00:01+00:00"),
+            status="error",
+        ),
+    ]
+
+    trace = build_normalized_traces(spans)[0]
+
+    assert trace.root_span_id == "orphan"
+    assert trace.outcome == "failure"
+
+
+def test_trace_root_prefers_explicit_root_over_earlier_orphan() -> None:
+    spans = [
+        NormalizedSpan(
+            trace_id="trace-explicit-root",
+            span_id="orphan",
+            parent_span_id="missing-parent",
+            source="langfuse",
+            name="orphan",
+            span_type="tool",
+            start_time=_dt("2026-04-26T10:00:00+00:00"),
+            status="ok",
+        ),
+        NormalizedSpan(
+            trace_id="trace-explicit-root",
+            span_id="root",
+            source="langfuse",
+            name="root",
+            span_type="root",
+            start_time=_dt("2026-04-26T10:00:01+00:00"),
+            status="ok",
+        ),
+        NormalizedSpan(
+            trace_id="trace-explicit-root",
+            span_id="failed-child",
+            parent_span_id="root",
+            source="langfuse",
+            name="failed_child",
+            span_type="tool",
+            start_time=_dt("2026-04-26T10:00:02+00:00"),
+            status="error",
+        ),
+    ]
+
+    trace = build_normalized_traces(spans)[0]
+
+    assert trace.root_span_id == "root"
+    assert trace.outcome == "success"
+
+
 def test_compute_data_quality_reports_coverage() -> None:
     spans = _normalized_spans() + [
         NormalizedSpan(
