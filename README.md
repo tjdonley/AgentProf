@@ -6,9 +6,9 @@
 
 AgentProf is a local-first CLI for inspecting AI-agent traces and turning them into failure-and-waste signals.
 
-The current MVP imports Langfuse observation exports, sanitizes persisted payloads, normalizes spans/traces into DuckDB, runs deterministic analyzers, and builds a cost ledger waterfall from normalized span costs. The longer-term goal is shareable reports that explain what failed, what wasted money, and what to fix.
+The current MVP imports Langfuse observation exports, sanitizes persisted payloads, normalizes spans/traces into DuckDB, runs deterministic analyzers, builds a cost ledger waterfall from normalized span costs, and generates local Markdown/JSON reports. The longer-term goal is polished shareable reports that explain what failed, what wasted money, and what to fix.
 
-This repository is early MVP software. It is usable for local import and normalization experiments, but broader analyzers and report generation are still being built.
+This repository is early MVP software. It is usable for local import, analysis, and report experiments, but broader analyzers and polished reporting are still being built.
 
 ## What Works Today
 
@@ -23,11 +23,12 @@ This repository is early MVP software. It is usable for local import and normali
 - Print a status-based cost waterfall for successful, failed, and unknown span costs.
 - Detect retry loops where the same failing call repeats with the same input fingerprint and error signature.
 - Detect configured tool/spec contract violations from normalized redacted previews and error messages.
+- Generate local Markdown and JSON reports from persisted issues, evidence, and costs.
 
 ## Not Built Yet
 
 - Deterministic failure/waste analyzers beyond retry-loop and spec-violation detection.
-- Markdown, JSON, or HTML report generation.
+- HTML report generation.
 - Phoenix, OpenTelemetry, or direct API ingestion.
 - Baseline/diff workflows and CI integration.
 
@@ -50,6 +51,7 @@ uv run agentprof normalize
 uv run agentprof analyze retry-loops
 uv run agentprof analyze spec-violations
 uv run agentprof cost ledger
+uv run agentprof report generate
 uv run agentprof store stats
 ```
 
@@ -121,7 +123,15 @@ uv run agentprof cost ledger
 
 This replaces the current normalized-span cost ledger entries idempotently and prints a waterfall grouped by span status.
 
-8. Inspect store row counts.
+8. Generate a local report.
+
+```bash
+uv run agentprof report generate
+```
+
+This writes Markdown and JSON report files under `.agentprof/reports/` and stores report metadata in the `reports` table.
+
+9. Inspect store row counts.
 
 ```bash
 uv run agentprof store stats
@@ -139,6 +149,7 @@ uv run agentprof store stats
 | `agentprof analyze retry-loops` | Detect repeated failing calls with the same retry fingerprint. |
 | `agentprof analyze spec-violations` | Detect spans that violate configured required field contracts. |
 | `agentprof cost ledger` | Build `cost_ledger` from normalized span costs and print a waterfall. |
+| `agentprof report generate` | Generate Markdown and JSON reports from persisted analysis results. |
 | `agentprof store stats` | Show row counts for all store tables. |
 | `agentprof store reset --yes` | Delete and recreate the local DuckDB store. |
 
@@ -195,6 +206,24 @@ privacy:
   max_evidence_chars: 500
 ```
 
+## Reports
+
+Generate reports after running analyzers and cost attribution:
+
+```bash
+uv run agentprof report generate
+```
+
+Use `--report-id` for a stable filename, or `--output-dir` to write files somewhere other than `.agentprof/reports/`:
+
+```bash
+uv run agentprof report generate \
+  --report-id latest \
+  --output-dir .agentprof/reports
+```
+
+Report JSON contains a machine-readable summary, issue details with evidence, and cost ledger entries. Report Markdown contains the same information in a local-first shareable format.
+
 ## Local Store
 
 The DuckDB store currently includes these tables:
@@ -208,7 +237,7 @@ The DuckDB store currently includes these tables:
 - `cost_ledger`
 - `reports`
 
-Some tables are schema placeholders for upcoming analyzer and report work.
+The `reports` table stores generated report metadata and points to the local Markdown/JSON output files.
 
 ## Development
 
@@ -235,5 +264,6 @@ uv run agentprof normalize
 uv run agentprof analyze retry-loops
 uv run agentprof analyze spec-violations
 uv run agentprof cost ledger
+uv run agentprof report generate
 uv run agentprof store stats
 ```

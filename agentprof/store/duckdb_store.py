@@ -122,6 +122,17 @@ class IssueEvidenceRecord:
     attributes: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class ReportRecord:
+    report_id: str
+    project: str | None
+    window_start: datetime | None
+    window_end: datetime | None
+    summary: dict[str, Any]
+    report_md_path: str | None
+    report_json_path: str | None
+
+
 MIGRATIONS = (
     Migration(
         version=1,
@@ -845,6 +856,77 @@ class DuckDBStore:
                 evidence_type=row[3],
                 message=row[4],
                 attributes=json.loads(row[5]),
+            )
+            for row in rows
+        ]
+
+    def upsert_report(self, record: ReportRecord) -> None:
+        self.ensure_schema()
+        with self.connect() as connection:
+            connection.execute("BEGIN TRANSACTION")
+            try:
+                connection.execute(
+                    "DELETE FROM reports WHERE report_id = ?",
+                    [record.report_id],
+                )
+                connection.execute(
+                    """
+                    INSERT INTO reports (
+                        report_id,
+                        project,
+                        window_start,
+                        window_end,
+                        summary_json,
+                        report_md_path,
+                        report_json_path
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        record.report_id,
+                        record.project,
+                        record.window_start,
+                        record.window_end,
+                        json.dumps(
+                            record.summary,
+                            ensure_ascii=True,
+                            sort_keys=True,
+                            default=str,
+                        ),
+                        record.report_md_path,
+                        record.report_json_path,
+                    ],
+                )
+                connection.execute("COMMIT")
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+
+    def fetch_reports(self, *, report_id: str | None = None) -> list[ReportRecord]:
+        self.ensure_schema()
+        query = """
+            SELECT report_id, project, CAST(window_start AS VARCHAR),
+                   CAST(window_end AS VARCHAR), summary_json, report_md_path,
+                   report_json_path
+            FROM reports
+        """
+        params: list[str] = []
+        if report_id:
+            query += " WHERE report_id = ?"
+            params.append(report_id)
+        query += " ORDER BY created_at, report_id"
+
+        with self.connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+
+        return [
+            ReportRecord(
+                report_id=row[0],
+                project=row[1],
+                window_start=_datetime_from_store(row[2]),
+                window_end=_datetime_from_store(row[3]),
+                summary=json.loads(row[4]),
+                report_md_path=row[5],
+                report_json_path=row[6],
             )
             for row in rows
         ]
