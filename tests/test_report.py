@@ -230,6 +230,37 @@ def test_generate_report_handles_empty_analysis_results(tmp_path: Path) -> None:
     assert store.stats()["reports"] == 1
 
 
+def test_generate_report_escapes_markdown_injection(tmp_path: Path) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    _seed_markdown_injection_issue(store)
+
+    result = generate_report(
+        store,
+        project="Tracer <b>[link](http://project.example)</b>",
+        output_dir=tmp_path / "reports",
+        report_id="escaped-report",
+        generated_at=_dt("2026-04-26T12:00:00+00:00"),
+    )
+    markdown = result.report_md_path.read_text(encoding="utf-8")
+
+    assert "<b>" not in markdown
+    assert "<script" not in markdown
+    assert "<img" not in markdown
+    assert "![](http" not in markdown
+    assert "](http" not in markdown
+    assert "[ref]: http" not in markdown
+    assert "[evil]: http" not in markdown
+    assert "http://" not in markdown
+    assert "https://" not in markdown
+    assert "www." not in markdown
+    assert "wasted|retry" not in markdown
+    assert "``trace`id:span`id``" in markdown
+    assert "https&#58;//test.example" in markdown
+    assert "www&#46;test.example" in markdown
+    assert r"\[ref\]: http&#58;//evil.example" in markdown
+    assert r"wasted\|retry" in markdown
+
+
 def test_generate_report_rejects_unsafe_report_id(tmp_path: Path) -> None:
     store = DuckDBStore(tmp_path / "agentprof.duckdb")
 
@@ -600,6 +631,49 @@ def _seed_multi_agent_issue(store: DuckDBStore) -> None:
     store.replace_analysis_results(
         issue_kind="multi_agent_waste",
         attribution_method="multi_agent_waste",
+        issues=[issue],
+        evidence=[evidence],
+        cost_records=[cost],
+    )
+
+
+def _seed_markdown_injection_issue(store: DuckDBStore) -> None:
+    issue = IssueRecord(
+        issue_id="retry_loop:evil|id",
+        kind="retry_loop",
+        title="Pwn](http://evil.example) <script>alert(1)</script>",
+        severity="medium",
+        confidence="high",
+        first_seen=_dt("2026-04-26T10:00:00+00:00"),
+        last_seen=_dt("2026-04-26T10:00:02+00:00"),
+        affected_traces=1,
+        affected_spans=1,
+        total_cost_usd=Decimal("0.030"),
+        wasted_cost_usd=Decimal("0.020"),
+        potential_savings_usd=Decimal("0.020"),
+        recommendation="![](http://attacker.example/leak)\n[evil]: http://evil.example",
+        recommended_tests=["[click me](https://test.example) www.test.example `danger`"],
+    )
+    evidence = IssueEvidenceRecord(
+        issue_id=issue.issue_id,
+        trace_id="trace`id",
+        span_id="span`id",
+        evidence_type="retry_attempt",
+        message="`code` ![](http://attacker.example/img.png)\n[ref]: http://evil.example <img src=x>",
+        attributes={},
+    )
+    cost = CostLedgerRecord(
+        trace_id="trace`id",
+        span_id="span`id",
+        issue_id=issue.issue_id,
+        cost_type="wasted|retry\n[ref]: http://evil.example",
+        amount_usd=Decimal("0.020"),
+        attribution_method="retry_loop](http://evil.example)",
+        confidence="source",
+    )
+    store.replace_analysis_results(
+        issue_kind="retry_loop",
+        attribution_method="retry_loop](http://evil.example)",
         issues=[issue],
         evidence=[evidence],
         cost_records=[cost],
