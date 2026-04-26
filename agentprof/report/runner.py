@@ -21,6 +21,7 @@ from agentprof.store.duckdb_store import (
 
 
 DEFAULT_REPORT_DIR = APP_DIR / "reports"
+REPORT_ID_MAX_LENGTH = 128
 REPORT_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 MULTI_AGENT_WASTE_KIND = "multi_agent_waste"
 
@@ -35,7 +36,7 @@ def generate_report(
 ) -> ReportBuildResult:
     generated_at = generated_at or datetime.now(UTC)
     report_id = report_id or _default_report_id(generated_at)
-    _validate_report_id(report_id)
+    validate_report_id(report_id)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     issues = store.fetch_issues()
@@ -447,7 +448,9 @@ def _default_report_id(generated_at: datetime) -> str:
     return f"agentprof-{generated_at.astimezone(UTC).strftime('%Y%m%dT%H%M%S%fZ')}"
 
 
-def _validate_report_id(report_id: str) -> None:
+def validate_report_id(report_id: str) -> None:
+    if len(report_id) > REPORT_ID_MAX_LENGTH:
+        raise ValueError(f"report_id must be {REPORT_ID_MAX_LENGTH} characters or fewer.")
     if REPORT_ID_RE.fullmatch(report_id) is None:
         raise ValueError(
             "report_id must start with a letter or number and contain only letters, "

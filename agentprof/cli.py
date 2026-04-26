@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import codecs
+import errno
+import os
+import stat
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path
@@ -29,7 +33,7 @@ from agentprof.ingest.langfuse_export import (
 )
 from agentprof.normalize.runner import normalize_store
 from agentprof.privacy.hashing import MissingSaltError
-from agentprof.report.runner import DEFAULT_REPORT_DIR, generate_report
+from agentprof.report.runner import DEFAULT_REPORT_DIR, generate_report, validate_report_id
 from agentprof.store.duckdb_store import DuckDBStore
 
 
@@ -44,6 +48,8 @@ class MultiAgentBaselineMode(StrEnum):
 
 
 console = Console()
+REPORT_SHOW_MAX_BYTES = 1_048_576
+REPORT_SHOW_CHUNK_SIZE = 64 * 1024
 app = typer.Typer(
     name="agentprof",
     help="Profile AI-agent traces and produce local failure-and-waste reports.",
@@ -398,6 +404,14 @@ def report_generate(
 ) -> None:
     """Generate Markdown and JSON reports from persisted analysis results."""
 
+    try:
+        if report_id is not None:
+            validate_report_id(report_id)
+        _validate_report_output_dir(output_dir)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
     try:
@@ -463,6 +477,12 @@ def report_show(
 ) -> None:
     """Print a generated report artifact."""
 
+    try:
+        validate_report_id(report_id)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
     reports = store.fetch_reports(report_id=report_id)
@@ -471,10 +491,14 @@ def report_show(
         raise typer.Exit(code=2)
 
     path = _report_artifact_path(reports[0], output_format)
-    if path is None or not path.is_file():
+    if path is None:
         console.print(f"[red]Report `{report_id}` {output_format} artifact was not found.[/red]")
         raise typer.Exit(code=2)
-    typer.echo(path.read_text(encoding="utf-8"), nl=False)
+    try:
+        _echo_report_artifact(path)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
 
 
 @store_app.command("stats")
@@ -584,10 +608,129 @@ def _parse_decimal_option(value: str, name: str) -> Decimal:
         raise ValueError(f"{name} must be a decimal value") from exc
 
 
+def _validate_report_output_dir(output_dir: Path) -> None:
+    reports_root = _resolve_path(DEFAULT_REPORT_DIR)
+    output_path = _resolve_path(output_dir)
+    if reports_root is None or output_path is None:
+        raise ValueError("--output-dir could not be resolved.")
+    if output_dir.exists() and output_dir.is_symlink():
+        raise ValueError("--output-dir must not be a symlink.")
+    if not output_path.is_relative_to(reports_root):
+        raise ValueError("--output-dir must be inside .agentprof/reports.")
+
+
 def _report_artifact_path(report, output_format: ReportShowFormat) -> Path | None:
     if output_format == ReportShowFormat.json:
-        return Path(report.report_json_path) if report.report_json_path else None
-    return Path(report.report_md_path) if report.report_md_path else None
+        raw_path = report.report_json_path
+    else:
+        raw_path = report.report_md_path
+    if not raw_path:
+        return None
+    return _safe_report_artifact_path(raw_path)
+
+
+def _safe_report_artifact_path(raw_path: str) -> Path | None:
+    reports_root = _resolve_path(DEFAULT_REPORT_DIR)
+    if reports_root is None:
+        return None
+    path = Path(raw_path)
+    candidates = [path]
+    if not path.is_absolute() and len(path.parts) == 1:
+        candidates.append(DEFAULT_REPORT_DIR / path)
+    for candidate in candidates:
+        resolved = _resolve_path(candidate)
+        if resolved is None:
+            continue
+        if not resolved.is_relative_to(reports_root):
+            continue
+        relative_path = resolved.relative_to(reports_root)
+        if _unsafe_relative_report_path(relative_path):
+            return None
+        return relative_path
+    return None
+
+
+def _echo_report_artifact(path: Path) -> None:
+    fd: int | None = None
+    try:
+        fd = _open_report_artifact(path)
+        file_stat = os.fstat(fd)
+
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise ValueError("Report artifact must be a regular file.")
+        if file_stat.st_size > REPORT_SHOW_MAX_BYTES:
+            raise ValueError(
+                "Report artifact is too large to show "
+                f"({file_stat.st_size} bytes; limit {REPORT_SHOW_MAX_BYTES})."
+            )
+
+        decoder = codecs.getincrementaldecoder("utf-8")()
+        bytes_read = 0
+        with os.fdopen(fd, "rb") as file:
+            fd = None
+            while chunk := file.read(REPORT_SHOW_CHUNK_SIZE):
+                bytes_read += len(chunk)
+                if bytes_read > REPORT_SHOW_MAX_BYTES:
+                    raise ValueError(
+                        "Report artifact is too large to show "
+                        f"(limit {REPORT_SHOW_MAX_BYTES})."
+                    )
+                typer.echo(decoder.decode(chunk), nl=False)
+            final_chunk = decoder.decode(b"", final=True)
+            if final_chunk:
+                typer.echo(final_chunk, nl=False)
+    except UnicodeDecodeError as exc:
+        raise ValueError("Report artifact is not valid UTF-8.") from exc
+    except OSError as exc:
+        raise ValueError("Report artifact could not be read.") from exc
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
+def _open_report_artifact(path: Path) -> int:
+    if _unsafe_relative_report_path(path):
+        raise ValueError("Report artifact path is invalid.")
+
+    directory_flags = (
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    )
+    file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    root_fd: int | None = None
+    try:
+        root_fd = os.open(DEFAULT_REPORT_DIR, directory_flags)
+        current_fd = root_fd
+        root_fd = None
+        try:
+            for part in path.parts[:-1]:
+                next_fd = os.open(part, directory_flags, dir_fd=current_fd)
+                os.close(current_fd)
+                current_fd = next_fd
+            return os.open(path.parts[-1], file_flags, dir_fd=current_fd)
+        finally:
+            os.close(current_fd)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise ValueError("Report artifact must not be a symlink.") from exc
+        if exc.errno in {errno.ENOENT, errno.ENOTDIR}:
+            raise ValueError("Report artifact was not found.") from exc
+        raise ValueError("Report artifact could not be read.") from exc
+    finally:
+        if root_fd is not None:
+            os.close(root_fd)
+
+
+def _unsafe_relative_report_path(path: Path) -> bool:
+    return path.is_absolute() or not path.parts or any(
+        part in {"", ".", ".."} for part in path.parts
+    )
+
+
+def _resolve_path(path: Path) -> Path | None:
+    try:
+        return path.resolve(strict=False)
+    except (OSError, RuntimeError):
+        return None
 
 
 if __name__ == "__main__":
