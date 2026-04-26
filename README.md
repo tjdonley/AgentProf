@@ -23,12 +23,13 @@ This repository is early MVP software. It is usable for local Langfuse export im
 - Print a status-based cost waterfall for successful, failed, and unknown span costs.
 - Detect retry loops where the same failing call repeats with the same input fingerprint and error signature.
 - Detect configured tool/spec contract violations from normalized redacted previews and error messages.
+- Estimate multi-agent orchestration overhead against a configurable single-agent baseline.
 - Generate local Markdown and JSON reports from persisted issues, evidence, and costs.
 - List and show generated reports from the local store.
 
 ## Planned / Not Built Yet
 
-- Additional deterministic failure/waste analyzers beyond retry-loop and spec-violation detection.
+- Additional deterministic failure/waste analyzers beyond the current retry-loop, spec-violation, and multi-agent waste detection.
 - HTML report generation.
 - Phoenix, OpenTelemetry, or direct API ingestion.
 - Baseline/diff workflows and CI integration.
@@ -58,7 +59,7 @@ uv run agentprof report list
 uv run agentprof store stats
 ```
 
-The fixture does not include cost fields, so `agentprof cost ledger` will produce zero ledger entries for that sample. Real Langfuse exports with `totalCost` or `costDetails.total` values will populate `cost_ledger`.
+The default fixture focuses on retry/spec behavior and does not include cost fields, so `agentprof cost ledger` will produce zero ledger entries for that sample. Use `tests/fixtures/langfuse_multi_agent_observations.json` for a costed multi-agent waste demo.
 
 ## Typical Workflow
 
@@ -157,6 +158,31 @@ Use a stable `--report-id` when generating reports if you want a predictable ID 
 ```bash
 uv run agentprof store stats
 ```
+
+## Multi-Agent Waste Demo
+
+The costed multi-agent fixture shows the current baseline-estimate story without requiring custom trace data:
+
+```bash
+uv run agentprof store reset --yes
+AGENTPROF_HASH_SALT=dev-salt uv run agentprof import langfuse-export \
+  --observations tests/fixtures/langfuse_multi_agent_observations.json
+uv run agentprof normalize
+uv run agentprof analyze multi-agent-waste --baseline-ratio 0.50
+uv run agentprof report generate --report-id multi-agent-demo
+```
+
+Expected analyzer story for that fixture:
+
+| Metric | Value |
+| --- | ---: |
+| Actual multi-agent trace cost | $0.084000000 |
+| Estimated single-agent baseline | $0.042000000 |
+| Estimated orchestration overhead | $0.042000000 |
+| Cost multiple | 2.00x |
+| Agents detected | 3 |
+
+This is a configurable estimate, not an observed project-specific baseline. Treat it as a research-prior starting point and validate important workflows with project-specific single-agent baseline traces when available.
 
 ## CLI Commands
 
