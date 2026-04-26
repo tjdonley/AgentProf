@@ -9,6 +9,7 @@ from agentprof.cli import app
 from agentprof.config import DEFAULT_STORE_PATH, AgentProfConfig, PrivacyConfig
 from agentprof.ingest.langfuse_export import (
     LangfuseExportFormat,
+    LangfuseExportImportError,
     load_observations,
     sanitize_observation_payload,
 )
@@ -53,6 +54,52 @@ def test_load_langfuse_observations_accepts_empty_data_object(tmp_path: Path) ->
     export_path.write_text('{"data": []}', encoding="utf-8")
 
     assert load_observations(export_path) == []
+
+
+def test_load_langfuse_observations_wraps_malformed_json(tmp_path: Path) -> None:
+    export_path = tmp_path / "observations.json"
+    export_path.write_text('{"data": [', encoding="utf-8")
+
+    try:
+        load_observations(export_path)
+    except LangfuseExportImportError as exc:
+        assert "Could not parse Langfuse observations JSON" in str(exc)
+    else:
+        raise AssertionError("expected LangfuseExportImportError")
+
+
+def test_load_langfuse_observations_wraps_malformed_csv(tmp_path: Path) -> None:
+    export_path = tmp_path / "observations.csv"
+    export_path.write_text('id,traceId\n"unterminated,trace-1\n', encoding="utf-8")
+
+    try:
+        load_observations(export_path, file_format=LangfuseExportFormat.csv)
+    except LangfuseExportImportError as exc:
+        assert "Could not parse Langfuse observations CSV" in str(exc)
+    else:
+        raise AssertionError("expected LangfuseExportImportError")
+
+
+def test_import_langfuse_export_reports_malformed_json(tmp_path: Path) -> None:
+    export_path = tmp_path / "observations.json"
+    export_path.write_text('{"data": [', encoding="utf-8")
+
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        import_result = runner.invoke(
+            app,
+            [
+                "import",
+                "langfuse-export",
+                "--observations",
+                str(export_path),
+            ],
+        )
+
+        assert init_result.exit_code == 0
+        assert import_result.exit_code == 2
+        assert "Could not import Langfuse export" in import_result.output
+        assert "Could not parse Langfuse observations JSON" in import_result.output
 
 
 def test_sanitize_preserves_raw_io_only_when_raw_io_is_enabled() -> None:

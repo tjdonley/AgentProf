@@ -191,8 +191,13 @@ def _hash_salt(
 
 
 def _load_json_observations(path: Path) -> list[dict[str, Any]]:
-    with path.open("r", encoding="utf-8") as file:
-        parsed = json.load(file)
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            parsed = json.load(file)
+    except json.JSONDecodeError as exc:
+        raise LangfuseExportImportError(
+            f"Could not parse Langfuse observations JSON: {exc}"
+        ) from exc
 
     if isinstance(parsed, list):
         observations = parsed
@@ -213,8 +218,13 @@ def _load_json_observations(path: Path) -> list[dict[str, Any]]:
 
 
 def _load_csv_observations(path: Path) -> list[dict[str, Any]]:
-    with path.open("r", encoding="utf-8", newline="") as file:
-        return _validate_observations(list(csv.DictReader(file)))
+    try:
+        with path.open("r", encoding="utf-8", newline="") as file:
+            return _validate_observations(list(csv.DictReader(file, strict=True)))
+    except csv.Error as exc:
+        raise LangfuseExportImportError(
+            f"Could not parse Langfuse observations CSV: {exc}"
+        ) from exc
 
 
 def _validate_observations(observations: list[Any]) -> list[dict[str, Any]]:
