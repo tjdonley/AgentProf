@@ -6,10 +6,11 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from agentprof.cli import app
-from agentprof.config import DEFAULT_STORE_PATH
+from agentprof.config import DEFAULT_STORE_PATH, AgentProfConfig, PrivacyConfig
 from agentprof.ingest.langfuse_export import (
     LangfuseExportFormat,
     load_observations,
+    sanitize_observation_payload,
 )
 from agentprof.store.duckdb_store import DuckDBStore
 
@@ -52,6 +53,24 @@ def test_load_langfuse_observations_accepts_empty_data_object(tmp_path: Path) ->
     export_path.write_text('{"data": []}', encoding="utf-8")
 
     assert load_observations(export_path) == []
+
+
+def test_sanitize_preserves_raw_io_only_when_raw_io_is_enabled() -> None:
+    config = AgentProfConfig(
+        privacy=PrivacyConfig(store_raw_io=True, hash_inputs=False)
+    )
+
+    payload = sanitize_observation_payload(
+        {
+            "id": "obs-1",
+            "input": "Authorization: Bearer rawiosecret",
+            "metadata": {"Authorization": "Bearer metadatasecret"},
+        },
+        config=config,
+    )
+
+    assert payload["input"] == "Authorization: Bearer rawiosecret"
+    assert payload["metadata"]["Authorization"] == "[SECRET]"
 
 
 def test_import_langfuse_export_stores_sanitized_raw_spans(

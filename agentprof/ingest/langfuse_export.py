@@ -120,12 +120,14 @@ def sanitize_observation_payload(
     raw_output = payload.get(OUTPUT_FIELD)
     salt = _hash_salt(config, raw_input=raw_input, raw_output=raw_output)
 
-    if not privacy.store_raw_io:
-        payload.pop(INPUT_FIELD, None)
-        payload.pop(OUTPUT_FIELD, None)
-
-    if not privacy.store_raw_io:
-        payload = redact_value(payload, rules)
+    payload.pop(INPUT_FIELD, None)
+    payload.pop(OUTPUT_FIELD, None)
+    payload = redact_value(payload, rules)
+    if privacy.store_raw_io:
+        if raw_input is not None:
+            payload[INPUT_FIELD] = raw_input
+        if raw_output is not None:
+            payload[OUTPUT_FIELD] = raw_output
 
     payload["_agentprof_privacy"] = _privacy_metadata(
         raw_input=raw_input,
