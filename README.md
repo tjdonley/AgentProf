@@ -150,6 +150,8 @@ uv run agentprof store stats
 | `agentprof analyze spec-violations` | Detect spans that violate configured required field contracts. |
 | `agentprof cost ledger` | Build `cost_ledger` from normalized span costs and print a waterfall. |
 | `agentprof report generate` | Generate Markdown and JSON reports from persisted analysis results. |
+| `agentprof report list` | List generated reports recorded in the local store. |
+| `agentprof report show REPORT_ID` | Print a generated report's Markdown or JSON artifact. |
 | `agentprof store stats` | Show row counts for all store tables. |
 | `agentprof store reset --yes` | Delete and recreate the local DuckDB store. |
 
@@ -224,6 +226,14 @@ uv run agentprof report generate \
 
 Report JSON contains a machine-readable summary, issue details with evidence, and cost ledger entries. Report Markdown contains the same information in a local-first shareable format.
 
+List and inspect generated reports:
+
+```bash
+uv run agentprof report list
+uv run agentprof report show latest
+uv run agentprof report show latest --format json
+```
+
 ## Local Store
 
 The DuckDB store currently includes these tables:
@@ -265,5 +275,6 @@ uv run agentprof analyze retry-loops
 uv run agentprof analyze spec-violations
 uv run agentprof cost ledger
 uv run agentprof report generate
+uv run agentprof report list
 uv run agentprof store stats
 ```

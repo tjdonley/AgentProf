@@ -176,6 +176,61 @@ def test_cli_report_generate_writes_outputs() -> None:
         assert len(reports) == 1
 
 
+def test_cli_report_list_and_show_generated_reports() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        store = DuckDBStore(DEFAULT_STORE_PATH)
+        _seed_retry_issue(store)
+        generate_result = runner.invoke(
+            app,
+            ["report", "generate", "--report-id", "cli-report"],
+        )
+
+        list_result = runner.invoke(app, ["report", "list"])
+        markdown_result = runner.invoke(app, ["report", "show", "cli-report"])
+        json_result = runner.invoke(
+            app,
+            ["report", "show", "cli-report", "--format", "json"],
+        )
+        markdown_path = Path(".agentprof/reports/cli-report.md")
+        json_path = Path(".agentprof/reports/cli-report.json")
+
+        assert init_result.exit_code == 0
+        assert generate_result.exit_code == 0
+        assert list_result.exit_code == 0
+        assert "Generated reports" in list_result.output
+        assert "cli-report" in list_result.output
+        assert markdown_result.exit_code == 0
+        assert "# AgentProf Report: tracer" in markdown_result.output
+        assert "Repeated failing call to refund_policy_lookup" in markdown_result.output
+        assert markdown_result.output == markdown_path.read_text(encoding="utf-8")
+        assert json_result.exit_code == 0
+        assert '"report_id": "cli-report"' in json_result.output
+        assert json_result.output == json_path.read_text(encoding="utf-8")
+
+
+def test_cli_report_list_handles_empty_store() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+
+        result = runner.invoke(app, ["report", "list"])
+
+        assert init_result.exit_code == 0
+        assert result.exit_code == 0
+        assert "No reports have been generated yet" in result.output
+
+
+def test_cli_report_show_requires_existing_report() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+
+        result = runner.invoke(app, ["report", "show", "missing-report"])
+
+        assert init_result.exit_code == 0
+        assert result.exit_code == 2
+        assert "was not found" in result.output
+
+
 def test_cli_report_generate_rejects_unsafe_report_id() -> None:
     with runner.isolated_filesystem():
         init_result = runner.invoke(app, ["init"])
