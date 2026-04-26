@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 
 import typer
@@ -16,6 +17,7 @@ from agentprof.config import (
     load_config,
     write_default_config,
 )
+from agentprof.cost.runner import build_cost_ledger
 from agentprof.ingest.langfuse_export import (
     LangfuseExportFormat,
     LangfuseExportImportError,
@@ -33,8 +35,10 @@ app = typer.Typer(
 )
 store_app = typer.Typer(help="Manage the local AgentProf DuckDB store.")
 import_app = typer.Typer(help="Import trace data into the local AgentProf store.")
+cost_app = typer.Typer(help="Analyze normalized trace costs.")
 app.add_typer(store_app, name="store")
 app.add_typer(import_app, name="import")
+app.add_typer(cost_app, name="cost")
 
 
 def _version_callback(value: bool) -> None:
@@ -166,6 +170,33 @@ def normalize(
     console.print(table)
 
 
+@cost_app.command("ledger")
+def cost_ledger() -> None:
+    """Build a cost ledger and print a waterfall from normalized spans."""
+
+    config = _load_config_or_exit()
+    store = DuckDBStore(config.store.path)
+    result = build_cost_ledger(store)
+
+    console.print("[green]Built cost ledger.[/green]")
+    console.print(f"  normalized spans seen: {result.normalized_spans_seen}")
+    console.print(f"  ledger entries: {result.ledger_entries}")
+    console.print(f"  traces with cost: {result.traces_with_cost}")
+    console.print(f"  total cost: {_format_usd(result.total_cost_usd)}")
+
+    table = Table(title="Cost waterfall")
+    table.add_column("Cost type")
+    table.add_column("Entries", justify="right")
+    table.add_column("Amount", justify="right")
+    for row in result.waterfall:
+        table.add_row(
+            _cost_type_label(row.cost_type),
+            str(row.entries),
+            _format_usd(row.amount_usd),
+        )
+    console.print(table)
+
+
 @store_app.command("stats")
 def store_stats() -> None:
     """Show local store row counts."""
@@ -247,6 +278,14 @@ def import_langfuse_export_command(
     console.print(f"  observations seen: {result.observations_seen}")
     console.print(f"  observations imported: {result.observations_imported}")
     console.print(f"  source: {result.raw_ref}")
+
+
+def _format_usd(value: Decimal) -> str:
+    return f"${value:.9f}"
+
+
+def _cost_type_label(cost_type: str) -> str:
+    return cost_type.replace("_", " ").capitalize()
 
 
 if __name__ == "__main__":
