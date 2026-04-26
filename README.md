@@ -6,6 +6,8 @@ AgentProf will import traces from systems such as Langfuse, normalize them into 
 
 This repository is in early MVP development.
 
+By default, AgentProf is designed to hash inputs, redact common sensitive values, and cap evidence snippets before trace data is persisted locally.
+
 ## Quickstart
 
 ```bash
