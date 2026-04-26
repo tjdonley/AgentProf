@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -23,6 +24,8 @@ from agentprof.store.duckdb_store import DuckDBStore
 
 
 runner = CliRunner()
+FIXTURES = Path(__file__).parent / "fixtures"
+README = Path(__file__).parents[1] / "README.md"
 
 
 def test_analyze_multi_agent_waste_detects_costed_root_and_child_agent_trace(
@@ -304,6 +307,81 @@ def test_cli_multi_agent_waste_validates_non_finite_decimals() -> None:
     assert overhead_result.exit_code == 2
     assert "min_overhead" in overhead_result.output
     assert "finite" in overhead_result.output
+
+
+def test_multi_agent_fixture_smoke_path_documents_estimate(monkeypatch) -> None:
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt")
+
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        import_result = runner.invoke(
+            app,
+            [
+                "import",
+                "langfuse-export",
+                "--observations",
+                str(FIXTURES / "langfuse_multi_agent_observations.json"),
+            ],
+        )
+        normalize_result = runner.invoke(app, ["normalize"])
+        analyze_result = runner.invoke(app, ["analyze", "multi-agent-waste"])
+        report_result = runner.invoke(
+            app,
+            ["report", "generate", "--report-id", "multi-agent-demo"],
+        )
+
+        store = DuckDBStore(DEFAULT_STORE_PATH)
+        issues = store.fetch_issues(kind=ISSUE_KIND)
+        evidence = store.fetch_issue_evidence(issue_id=issues[0].issue_id)
+        costs = store.fetch_cost_ledger(attribution_method=ATTRIBUTION_METHOD)
+        report_payload = json.loads(
+            Path(".agentprof/reports/multi-agent-demo.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+    assert init_result.exit_code == 0
+    assert import_result.exit_code == 0
+    assert "observations imported: 5" in import_result.output
+    assert normalize_result.exit_code == 0
+    assert "normalized spans: 5" in normalize_result.output
+    assert "normalized traces: 1" in normalize_result.output
+    assert analyze_result.exit_code == 0
+    assert "multi-agent traces: 1" in analyze_result.output
+    assert "estimated orchestration overhead: $0.042000000" in analyze_result.output
+    assert report_result.exit_code == 0
+    assert "issues: 1" in report_result.output
+    assert "total wasted cost: $0.042000000" in report_result.output
+
+    assert len(issues) == 1
+    assert issues[0].total_cost_usd == Decimal("0.084")
+    assert issues[0].wasted_cost_usd == Decimal("0.042")
+    assert issues[0].affected_spans == 5
+    assert len(evidence) == 1
+    assert evidence[0].attributes["basis"] == "configured_ratio_estimate"
+    assert evidence[0].attributes["agent_count"] == 3
+    assert evidence[0].attributes["agent_names"] == [
+        "triage_agent",
+        "research_agent",
+        "policy_agent",
+    ]
+    assert len(costs) == 1
+    assert costs[0].cost_type == WASTED_COST_TYPE
+    assert costs[0].amount_usd == Decimal("0.042")
+    assert report_payload["summary"]["issue_count"] == 1
+    assert report_payload["summary"]["issues_by_kind"] == {"multi_agent_waste": 1}
+    assert report_payload["summary"]["total_wasted_cost_usd"] == "0.042000000"
+
+
+def test_readme_multi_agent_fixture_commands_match_cli() -> None:
+    readme = README.read_text(encoding="utf-8")
+    help_result = runner.invoke(app, ["analyze", "multi-agent-waste", "--help"])
+
+    assert help_result.exit_code == 0
+    assert "tests/fixtures/langfuse_multi_agent_observations.json" in readme
+    assert "agentprof analyze multi-agent-waste" in readme
+    assert "--baseline-ratio" in readme
+    assert "--baseline-ratio" in help_result.output
 
 
 def _multi_agent_spans() -> list[NormalizedSpan]:
