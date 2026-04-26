@@ -281,7 +281,7 @@ def _markdown_issue(issue: dict[str, Any]) -> list[str]:
 
 
 def _default_report_id(generated_at: datetime) -> str:
-    return f"agentprof-{generated_at.astimezone(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    return f"agentprof-{generated_at.astimezone(UTC).strftime('%Y%m%dT%H%M%S%fZ')}"
 
 
 def _validate_report_id(report_id: str) -> None:

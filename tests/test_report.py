@@ -89,6 +89,30 @@ def test_generate_report_upserts_existing_report_id(tmp_path: Path) -> None:
     assert store.stats()["reports"] == 1
 
 
+def test_generate_report_default_ids_include_subsecond_precision(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+
+    first = generate_report(
+        store,
+        project="tracer",
+        output_dir=tmp_path / "reports",
+        generated_at=_dt("2026-04-26T12:00:00.100000+00:00"),
+    )
+    second = generate_report(
+        store,
+        project="tracer",
+        output_dir=tmp_path / "reports",
+        generated_at=_dt("2026-04-26T12:00:00.200000+00:00"),
+    )
+
+    assert first.report_id == "agentprof-20260426T120000100000Z"
+    assert second.report_id == "agentprof-20260426T120000200000Z"
+    assert first.report_id != second.report_id
+    assert store.stats()["reports"] == 2
+
+
 def test_generate_report_handles_empty_analysis_results(tmp_path: Path) -> None:
     store = DuckDBStore(tmp_path / "agentprof.duckdb")
 
