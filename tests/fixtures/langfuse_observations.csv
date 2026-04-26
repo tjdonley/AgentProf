@@ -1,0 +1,2 @@
+id,traceId,parentObservationId,type,name,input,output
+csv-obs-1,trace-csv,,SPAN,csv_agent,hello,world
