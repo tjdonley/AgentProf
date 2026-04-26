@@ -95,6 +95,20 @@ class NormalizedSpanAnalysisRow:
 
 
 @dataclass(frozen=True)
+class NormalizedSpanAgentAnalysisRow:
+    trace_id: str
+    span_id: str
+    parent_span_id: str | None
+    name: str
+    span_type: str
+    agent_name: str | None
+    start_time: datetime | None
+    end_time: datetime | None
+    cost_usd: Decimal | None
+    cost_confidence: str
+
+
+@dataclass(frozen=True)
 class IssueRecord:
     issue_id: str
     kind: str
@@ -588,6 +602,37 @@ class DuckDBStore:
                 output_preview=row[12],
                 cost_usd=row[13],
                 cost_confidence=row[14],
+            )
+            for row in rows
+        ]
+
+    def fetch_normalized_spans_for_agent_analysis(
+        self,
+    ) -> list[NormalizedSpanAgentAnalysisRow]:
+        self.ensure_schema()
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT trace_id, span_id, parent_span_id, name, span_type, agent_name,
+                       CAST(start_time AS VARCHAR), CAST(end_time AS VARCHAR),
+                       cost_usd, cost_confidence
+                FROM normalized_spans
+                ORDER BY trace_id, parent_span_id, start_time, span_id
+                """
+            ).fetchall()
+
+        return [
+            NormalizedSpanAgentAnalysisRow(
+                trace_id=row[0],
+                span_id=row[1],
+                parent_span_id=row[2],
+                name=row[3],
+                span_type=row[4],
+                agent_name=row[5],
+                start_time=_datetime_from_store(row[6]),
+                end_time=_datetime_from_store(row[7]),
+                cost_usd=row[8],
+                cost_confidence=row[9],
             )
             for row in rows
         ]
