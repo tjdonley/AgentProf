@@ -118,6 +118,45 @@ def test_generate_report_skips_multi_agent_waste_svg_when_absent(
     assert "![Multi-agent waste estimate]" not in markdown
 
 
+def test_generate_report_removes_stale_multi_agent_waste_svg(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    _seed_multi_agent_issue(store)
+    output_dir = tmp_path / "reports"
+    svg_path = output_dir / "same-report-multi-agent-waste.svg"
+
+    generate_report(
+        store,
+        project="tracer",
+        output_dir=output_dir,
+        report_id="same-report",
+        generated_at=_dt("2026-04-26T12:00:00+00:00"),
+    )
+    assert svg_path.is_file()
+
+    store.replace_analysis_results(
+        issue_kind="multi_agent_waste",
+        attribution_method="multi_agent_waste",
+        issues=[],
+        evidence=[],
+        cost_records=[],
+    )
+    result = generate_report(
+        store,
+        project="tracer",
+        output_dir=output_dir,
+        report_id="same-report",
+        generated_at=_dt("2026-04-26T12:05:00+00:00"),
+    )
+    payload = json.loads(result.report_json_path.read_text(encoding="utf-8"))
+    markdown = result.report_md_path.read_text(encoding="utf-8")
+
+    assert not svg_path.exists()
+    assert payload["summary"]["artifacts"] == {}
+    assert "![Multi-agent waste estimate]" not in markdown
+
+
 def test_generate_report_upserts_existing_report_id(tmp_path: Path) -> None:
     store = DuckDBStore(tmp_path / "agentprof.duckdb")
     _seed_retry_issue(store)
