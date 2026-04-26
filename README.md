@@ -4,11 +4,25 @@
 
 # AgentProf
 
-AgentProf is a local-first CLI for inspecting AI-agent traces and turning them into failure-and-waste signals.
+AgentProf is a local-first CLI for turning AI-agent traces into evidence-backed failure and waste reports.
 
-The current MVP imports Langfuse observation exports, sanitizes persisted payloads, normalizes spans/traces into DuckDB, runs deterministic analyzers, builds a cost ledger waterfall from normalized span costs, and generates local Markdown/JSON reports. The longer-term goal is broader source support, more analyzers, and polished shareable reports that explain what failed, what wasted money, and what to fix.
+The current MVP imports Langfuse observation exports, sanitizes persisted payloads, normalizes spans/traces into DuckDB, runs deterministic analyzers, builds a cost ledger waterfall from normalized span costs, and generates local Markdown/JSON reports with optional SVG visuals. It is designed for teams that want to inspect agent behavior without sending trace data to another service.
 
 This repository is early MVP software. It is usable for local Langfuse export import, normalization, analysis, cost attribution, and report generation. Additional sources, analyzers, and report formats are still being built.
+
+## At A Glance
+
+<p align="center">
+  <img src="assets/agentprof-workflow.svg" alt="AgentProf workflow from import through privacy, normalization, analysis, and reports" width="900">
+</p>
+
+| Stage | What AgentProf Does |
+| --- | --- |
+| Import | Loads Langfuse observation exports from JSON or CSV. |
+| Privacy | Redacts common secrets and hashes input/output values when configured. |
+| Normalize | Maps provider payloads into canonical spans and traces in local DuckDB. |
+| Analyze | Detects retry loops, configured spec violations, and multi-agent orchestration overhead. |
+| Report | Writes Markdown, JSON, and multi-agent waste SVG artifacts under `.agentprof/reports/`. |
 
 ## What Works Today
 
@@ -23,8 +37,8 @@ This repository is early MVP software. It is usable for local Langfuse export im
 - Print a status-based cost waterfall for successful, failed, and unknown span costs.
 - Detect retry loops where the same failing call repeats with the same input fingerprint and error signature.
 - Detect configured tool/spec contract violations from normalized redacted previews and error messages.
-- Estimate multi-agent orchestration overhead against a configurable single-agent baseline.
-- Generate local Markdown and JSON reports from persisted issues, evidence, and costs.
+- Estimate multi-agent orchestration overhead against configured or observed single-agent baselines.
+- Generate local Markdown and JSON reports from persisted issues, evidence, costs, and optional visuals.
 - List and show generated reports from the local store.
 
 ## Planned / Not Built Yet
@@ -60,6 +74,8 @@ uv run agentprof store stats
 ```
 
 The default fixture focuses on retry/spec behavior and does not include cost fields, so `agentprof cost ledger` will produce zero ledger entries for that sample. Use `tests/fixtures/langfuse_multi_agent_observations.json` for a costed multi-agent waste demo.
+
+The workflow creates local files only. After `agentprof report generate`, the default report artifacts are written under `.agentprof/reports/` and can be inspected with `agentprof report show`.
 
 ## Typical Workflow
 
@@ -172,6 +188,10 @@ uv run agentprof analyze multi-agent-waste --baseline-ratio 0.50
 uv run agentprof report generate --report-id multi-agent-demo
 ```
 
+<p align="center">
+  <img src="assets/multi-agent-waste-demo.svg" alt="Multi-agent waste demo showing actual cost, estimated baseline, estimated overhead, cost multiple, and agent count" width="760">
+</p>
+
 Expected analyzer story for that fixture:
 
 | Metric | Value |
@@ -181,6 +201,15 @@ Expected analyzer story for that fixture:
 | Estimated orchestration overhead | $0.042000000 |
 | Cost multiple | 2.00x |
 | Agents detected | 3 |
+
+The report command writes predictable local artifacts when `--report-id multi-agent-demo` is used:
+
+```text
+.agentprof/reports/
+  multi-agent-demo.md
+  multi-agent-demo.json
+  multi-agent-demo-multi-agent-waste.svg
+```
 
 This is a configurable estimate, not an observed project-specific baseline. Treat it as a research-prior starting point and validate important workflows with project-specific single-agent baseline traces when available.
 
@@ -282,7 +311,20 @@ uv run agentprof report generate \
   --output-dir .agentprof/reports
 ```
 
-Report JSON contains a machine-readable summary, issue details with evidence, and cost ledger entries. Report Markdown contains the same information in a local-first shareable format.
+Report JSON contains a machine-readable summary, issue details with evidence, and cost ledger entries. Report Markdown contains the same information in a local-first shareable format:
+
+```text
+# AgentProf Report: AgentProf
+
+## Summary
+| Metric | Value |
+| --- | ---: |
+| Issues | 1 |
+| Total wasted cost | $0.042000000 |
+
+## Visuals
+![Multi-agent waste estimate](multi-agent-demo-multi-agent-waste.svg)
+```
 
 When persisted `multi_agent_waste` issues exist, `agentprof report generate` also writes `<report-id>-multi-agent-waste.svg` next to the Markdown/JSON files, embeds it in the Markdown report, and records the artifact filename in `summary.artifacts.multi_agent_waste_svg`.
 
