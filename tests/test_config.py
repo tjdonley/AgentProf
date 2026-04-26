@@ -19,6 +19,7 @@ def test_load_default_config(tmp_path: Path) -> None:
     assert config.privacy.store_raw_io is False
     assert config.privacy.redact.emails is True
     assert config.privacy.redact.custom_patterns == []
+    assert config.analyzers.spec_violations.contracts == []
     assert config.store.path == Path(".agentprof/data/agentprof.duckdb")
 
 
@@ -50,6 +51,32 @@ privacy:
 
     assert config.privacy.redact.custom_patterns[0].name == "internal_customer_id"
     assert config.privacy.redact.custom_patterns[0].regex == "cust_[A-Za-z0-9]+"
+
+
+def test_load_config_supports_spec_violation_contracts(tmp_path: Path) -> None:
+    config_path = tmp_path / "agentprof.yml"
+    config_path.write_text(
+        """
+analyzers:
+  spec_violations:
+    contracts:
+      - name: refund_policy_lookup
+        required_input_fields:
+          - customer_id
+          - region
+        required_output_fields:
+          - answer
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+    contract = config.analyzers.spec_violations.contracts[0]
+
+    assert contract.name == "refund_policy_lookup"
+    assert contract.span_name is None
+    assert contract.required_input_fields == ["customer_id", "region"]
+    assert contract.required_output_fields == ["answer"]
 
 
 def test_load_config_requires_file(tmp_path: Path) -> None:

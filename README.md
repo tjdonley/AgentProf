@@ -6,7 +6,7 @@
 
 AgentProf is a local-first CLI for inspecting AI-agent traces and turning them into failure-and-waste signals.
 
-The current MVP imports Langfuse observation exports, sanitizes persisted payloads, normalizes spans/traces into DuckDB, and builds a cost ledger waterfall from normalized span costs. The longer-term goal is deterministic analyzers and shareable reports that explain what failed, what wasted money, and what to fix.
+The current MVP imports Langfuse observation exports, sanitizes persisted payloads, normalizes spans/traces into DuckDB, runs deterministic analyzers, and builds a cost ledger waterfall from normalized span costs. The longer-term goal is shareable reports that explain what failed, what wasted money, and what to fix.
 
 This repository is early MVP software. It is usable for local import and normalization experiments, but broader analyzers and report generation are still being built.
 
@@ -22,10 +22,11 @@ This repository is early MVP software. It is usable for local import and normali
 - Build an idempotent cost ledger from normalized span costs.
 - Print a status-based cost waterfall for successful, failed, and unknown span costs.
 - Detect retry loops where the same failing call repeats with the same input fingerprint and error signature.
+- Detect configured tool/spec contract violations from normalized redacted previews and error messages.
 
 ## Not Built Yet
 
-- Deterministic failure/waste analyzers beyond retry-loop detection and the initial cost ledger.
+- Deterministic failure/waste analyzers beyond retry-loop and spec-violation detection.
 - Markdown, JSON, or HTML report generation.
 - Phoenix, OpenTelemetry, or direct API ingestion.
 - Baseline/diff workflows and CI integration.
@@ -47,6 +48,7 @@ AGENTPROF_HASH_SALT=dev-salt uv run agentprof import langfuse-export \
   --observations tests/fixtures/langfuse_observations.json
 uv run agentprof normalize
 uv run agentprof analyze retry-loops
+uv run agentprof analyze spec-violations
 uv run agentprof cost ledger
 uv run agentprof store stats
 ```
@@ -103,7 +105,15 @@ uv run agentprof analyze retry-loops
 
 This writes `retry_loop` issues, issue evidence, and wasted retry costs when repeated failed attempts have the same trace, parent span, name, input retry fingerprint, and error signature.
 
-6. Build the cost ledger.
+6. Detect configured spec violations.
+
+```bash
+uv run agentprof analyze spec-violations
+```
+
+This writes `spec_violation` issues, issue evidence, and wasted spec-violation costs when spans violate required input or output fields configured in `agentprof.yml`.
+
+7. Build the cost ledger.
 
 ```bash
 uv run agentprof cost ledger
@@ -111,7 +121,7 @@ uv run agentprof cost ledger
 
 This replaces the current normalized-span cost ledger entries idempotently and prints a waterfall grouped by span status.
 
-7. Inspect store row counts.
+8. Inspect store row counts.
 
 ```bash
 uv run agentprof store stats
@@ -127,9 +137,29 @@ uv run agentprof store stats
 | `agentprof import langfuse-export` | Import Langfuse observation exports into `raw_spans`. |
 | `agentprof normalize` | Normalize raw imported spans into canonical trace/span tables. |
 | `agentprof analyze retry-loops` | Detect repeated failing calls with the same retry fingerprint. |
+| `agentprof analyze spec-violations` | Detect spans that violate configured required field contracts. |
 | `agentprof cost ledger` | Build `cost_ledger` from normalized span costs and print a waterfall. |
 | `agentprof store stats` | Show row counts for all store tables. |
 | `agentprof store reset --yes` | Delete and recreate the local DuckDB store. |
+
+## Spec Contracts
+
+Spec-violation analysis is opt-in. Add contracts under `analyzers.spec_violations.contracts`:
+
+```yaml
+analyzers:
+  spec_violations:
+    contracts:
+      - name: refund_policy_lookup
+        required_input_fields:
+          - customer_id
+          - region
+        required_output_fields:
+          - answer
+          - confidence
+```
+
+By default, a contract matches spans whose normalized `name` equals the contract `name`. Use `span_name` when you want a stable contract name that differs from the observed span name.
 
 ## Input Data
 
@@ -203,6 +233,7 @@ AGENTPROF_HASH_SALT=dev-salt uv run agentprof import langfuse-export \
   --observations tests/fixtures/langfuse_observations.json
 uv run agentprof normalize
 uv run agentprof analyze retry-loops
+uv run agentprof analyze spec-violations
 uv run agentprof cost ledger
 uv run agentprof store stats
 ```
