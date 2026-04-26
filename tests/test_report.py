@@ -436,6 +436,31 @@ def test_cli_report_show_rejects_symlinked_artifact() -> None:
         assert "TOPSECRET" not in result.output
 
 
+def test_cli_report_show_handles_symlink_loop_artifact_path() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        store = DuckDBStore(DEFAULT_STORE_PATH)
+        loop_path = Path(".agentprof/reports/loop")
+        loop_path.symlink_to("loop")
+        store.upsert_report(
+            ReportRecord(
+                report_id="loop",
+                project="tracer",
+                window_start=None,
+                window_end=None,
+                summary={},
+                report_md_path=str(loop_path / "report.md"),
+                report_json_path=str(loop_path / "report.json"),
+            )
+        )
+
+        result = runner.invoke(app, ["report", "show", "loop"])
+
+        assert init_result.exit_code == 0
+        assert result.exit_code == 2
+        assert "artifact was not found" in result.output
+
+
 def test_cli_report_show_rejects_oversized_artifact() -> None:
     with runner.isolated_filesystem():
         init_result = runner.invoke(app, ["init"])

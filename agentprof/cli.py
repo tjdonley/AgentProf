@@ -609,8 +609,10 @@ def _parse_decimal_option(value: str, name: str) -> Decimal:
 
 
 def _validate_report_output_dir(output_dir: Path) -> None:
-    reports_root = DEFAULT_REPORT_DIR.resolve(strict=False)
-    output_path = output_dir.resolve(strict=False)
+    reports_root = _resolve_path(DEFAULT_REPORT_DIR)
+    output_path = _resolve_path(output_dir)
+    if reports_root is None or output_path is None:
+        raise ValueError("--output-dir could not be resolved.")
     if output_dir.exists() and output_dir.is_symlink():
         raise ValueError("--output-dir must not be a symlink.")
     if not output_path.is_relative_to(reports_root):
@@ -628,15 +630,16 @@ def _report_artifact_path(report, output_format: ReportShowFormat) -> Path | Non
 
 
 def _safe_report_artifact_path(raw_path: str) -> Path | None:
-    reports_root = DEFAULT_REPORT_DIR.resolve(strict=False)
+    reports_root = _resolve_path(DEFAULT_REPORT_DIR)
+    if reports_root is None:
+        return None
     path = Path(raw_path)
     candidates = [path]
     if not path.is_absolute() and len(path.parts) == 1:
         candidates.append(DEFAULT_REPORT_DIR / path)
     for candidate in candidates:
-        try:
-            resolved = candidate.resolve(strict=False)
-        except OSError:
+        resolved = _resolve_path(candidate)
+        if resolved is None:
             continue
         if not resolved.is_relative_to(reports_root):
             continue
@@ -695,7 +698,7 @@ def _open_report_artifact(path: Path) -> int:
     file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     root_fd: int | None = None
     try:
-        root_fd = os.open(DEFAULT_REPORT_DIR.resolve(strict=False), directory_flags)
+        root_fd = os.open(DEFAULT_REPORT_DIR, directory_flags)
         current_fd = root_fd
         root_fd = None
         try:
@@ -721,6 +724,13 @@ def _unsafe_relative_report_path(path: Path) -> bool:
     return path.is_absolute() or not path.parts or any(
         part in {"", ".", ".."} for part in path.parts
     )
+
+
+def _resolve_path(path: Path) -> Path | None:
+    try:
+        return path.resolve(strict=False)
+    except (OSError, RuntimeError):
+        return None
 
 
 if __name__ == "__main__":
