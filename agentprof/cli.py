@@ -27,6 +27,7 @@ from agentprof.ingest.langfuse_export import (
 )
 from agentprof.normalize.runner import normalize_store
 from agentprof.privacy.hashing import MissingSaltError
+from agentprof.report.runner import DEFAULT_REPORT_DIR, generate_report
 from agentprof.store.duckdb_store import DuckDBStore
 
 console = Console()
@@ -39,10 +40,12 @@ store_app = typer.Typer(help="Manage the local AgentProf DuckDB store.")
 import_app = typer.Typer(help="Import trace data into the local AgentProf store.")
 cost_app = typer.Typer(help="Analyze normalized trace costs.")
 analyze_app = typer.Typer(help="Run deterministic analyzers over normalized traces.")
+report_app = typer.Typer(help="Generate local AgentProf reports.")
 app.add_typer(store_app, name="store")
 app.add_typer(import_app, name="import")
 app.add_typer(cost_app, name="cost")
 app.add_typer(analyze_app, name="analyze")
+app.add_typer(report_app, name="report")
 
 
 def _version_callback(value: bool) -> None:
@@ -284,6 +287,44 @@ def analyze_spec_violations_command() -> None:
             _format_usd(finding.wasted_cost_usd),
         )
     console.print(table)
+
+
+@report_app.command("generate")
+def report_generate(
+    output_dir: Path = typer.Option(
+        DEFAULT_REPORT_DIR,
+        "--output-dir",
+        help="Directory where Markdown and JSON report files will be written.",
+    ),
+    report_id: str | None = typer.Option(
+        None,
+        "--report-id",
+        help="Optional stable report ID. Defaults to a UTC timestamp-based ID.",
+    ),
+) -> None:
+    """Generate Markdown and JSON reports from persisted analysis results."""
+
+    config = _load_config_or_exit()
+    store = DuckDBStore(config.store.path)
+    try:
+        result = generate_report(
+            store,
+            project=config.project.name,
+            output_dir=output_dir,
+            report_id=report_id,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    console.print("[green]Generated AgentProf report.[/green]")
+    console.print(f"  report id: {result.report_id}")
+    console.print(f"  issues: {result.issues}")
+    console.print(f"  evidence items: {result.evidence_items}")
+    console.print(f"  cost entries: {result.cost_entries}")
+    console.print(f"  total wasted cost: {_format_usd(result.total_wasted_cost_usd)}")
+    console.print(f"  markdown: {result.report_md_path}")
+    console.print(f"  json: {result.report_json_path}")
 
 
 @store_app.command("stats")
