@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Sequence
 
@@ -49,6 +50,26 @@ class RawSpanRow:
     parent_span_id: str | None
     payload_json: str
     raw_ref: str | None
+
+
+@dataclass(frozen=True)
+class NormalizedSpanCostRow:
+    trace_id: str
+    span_id: str
+    status: str
+    cost_usd: Decimal | None
+    cost_confidence: str
+
+
+@dataclass(frozen=True)
+class CostLedgerRecord:
+    trace_id: str
+    span_id: str | None
+    issue_id: str | None
+    cost_type: str
+    amount_usd: Decimal | None
+    attribution_method: str
+    confidence: str
 
 
 MIGRATIONS = (
@@ -446,6 +467,84 @@ class DuckDBStore:
             except Exception:
                 connection.execute("ROLLBACK")
                 raise
+
+    def fetch_normalized_span_costs(self) -> list[NormalizedSpanCostRow]:
+        self.ensure_schema()
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT trace_id, span_id, status, cost_usd, cost_confidence
+                FROM normalized_spans
+                ORDER BY trace_id, span_id
+                """
+            ).fetchall()
+
+        return [NormalizedSpanCostRow(*row) for row in rows]
+
+    def replace_cost_ledger(
+        self,
+        records: Sequence[CostLedgerRecord],
+        *,
+        attribution_method: str,
+    ) -> None:
+        if any(record.attribution_method != attribution_method for record in records):
+            raise ValueError("Cost ledger records must match the replacement method.")
+
+        self.ensure_schema()
+        with self.connect() as connection:
+            connection.execute("BEGIN TRANSACTION")
+            try:
+                connection.execute(
+                    "DELETE FROM cost_ledger WHERE attribution_method = ?",
+                    [attribution_method],
+                )
+                for record in records:
+                    connection.execute(
+                        """
+                        INSERT INTO cost_ledger (
+                            trace_id,
+                            span_id,
+                            issue_id,
+                            cost_type,
+                            amount_usd,
+                            attribution_method,
+                            confidence
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            record.trace_id,
+                            record.span_id,
+                            record.issue_id,
+                            record.cost_type,
+                            record.amount_usd,
+                            record.attribution_method,
+                            record.confidence,
+                        ],
+                    )
+                connection.execute("COMMIT")
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+
+    def fetch_cost_ledger(
+        self, *, attribution_method: str | None = None
+    ) -> list[CostLedgerRecord]:
+        self.ensure_schema()
+        query = """
+            SELECT trace_id, span_id, issue_id, cost_type, amount_usd,
+                   attribution_method, confidence
+            FROM cost_ledger
+        """
+        params: list[str] = []
+        if attribution_method:
+            query += " WHERE attribution_method = ?"
+            params.append(attribution_method)
+        query += " ORDER BY trace_id, span_id, cost_type, issue_id"
+
+        with self.connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+
+        return [CostLedgerRecord(*row) for row in rows]
 
     def stats(self) -> dict[str, int]:
         self.ensure_schema()
