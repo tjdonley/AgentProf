@@ -49,6 +49,19 @@ def test_doctor_after_init() -> None:
         assert "workspace looks ready" in doctor_result.output
 
 
+def test_doctor_fails_when_store_is_missing() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        DEFAULT_STORE_PATH.unlink()
+
+        doctor_result = runner.invoke(app, ["doctor"])
+
+        assert init_result.exit_code == 0
+        assert doctor_result.exit_code == 2
+        assert "workspace is not usable" in doctor_result.output
+        assert not DEFAULT_STORE_PATH.exists()
+
+
 def test_store_stats_after_init() -> None:
     with runner.isolated_filesystem():
         init_result = runner.invoke(app, ["init"])

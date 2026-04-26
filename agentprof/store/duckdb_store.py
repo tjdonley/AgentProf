@@ -223,8 +223,10 @@ class DuckDBStore:
             }
 
     def migrations(self) -> list[tuple[int, str]]:
-        self.ensure_schema()
-        with self.connect() as connection:
+        if not self.path.exists():
+            raise FileNotFoundError(self.path)
+
+        with duckdb.connect(str(self.path), read_only=True) as connection:
             return connection.execute(
                 "SELECT version, name FROM schema_migrations ORDER BY version"
             ).fetchall()
