@@ -18,6 +18,7 @@ uv run agentprof doctor
 uv run agentprof store stats
 AGENTPROF_HASH_SALT=dev-salt uv run agentprof import langfuse-export \
   --observations tests/fixtures/langfuse_observations.json
+uv run agentprof normalize
 ```
 
 ## Development

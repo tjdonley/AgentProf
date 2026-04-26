@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -37,6 +38,17 @@ class RawSpanRecord:
     parent_span_id: str | None
     payload_json: str
     raw_ref: str | None = None
+
+
+@dataclass(frozen=True)
+class RawSpanRow:
+    source: str
+    source_id: str
+    trace_id: str | None
+    span_id: str | None
+    parent_span_id: str | None
+    payload_json: str
+    raw_ref: str | None
 
 
 MIGRATIONS = (
@@ -266,6 +278,174 @@ class DuckDBStore:
                 connection.execute("ROLLBACK")
                 raise
         return len(records)
+
+    def fetch_raw_spans(self, *, source: str | None = None) -> list[RawSpanRow]:
+        self.ensure_schema()
+        query = """
+            SELECT source, source_id, trace_id, span_id, parent_span_id, payload_json, raw_ref
+            FROM raw_spans
+        """
+        params: list[str] = []
+        if source:
+            query += " WHERE source = ?"
+            params.append(source)
+        query += " ORDER BY trace_id, span_id, source_id"
+
+        with self.connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+
+        return [RawSpanRow(*row) for row in rows]
+
+    def replace_normalized(self, *, spans: Sequence, traces: Sequence) -> None:
+        trace_ids = sorted(
+            {span.trace_id for span in spans} | {trace.trace_id for trace in traces}
+        )
+        if not trace_ids:
+            return
+
+        self.ensure_schema()
+        with self.connect() as connection:
+            connection.execute("BEGIN TRANSACTION")
+            try:
+                for trace_id in trace_ids:
+                    connection.execute(
+                        "DELETE FROM normalized_spans WHERE trace_id = ?",
+                        [trace_id],
+                    )
+                    connection.execute(
+                        "DELETE FROM normalized_traces WHERE trace_id = ?",
+                        [trace_id],
+                    )
+
+                for span in spans:
+                    connection.execute(
+                        """
+                        INSERT INTO normalized_spans (
+                            trace_id,
+                            span_id,
+                            parent_span_id,
+                            source,
+                            name,
+                            span_type,
+                            operation_name,
+                            agent_name,
+                            tool_name,
+                            model_name,
+                            provider_name,
+                            start_time,
+                            end_time,
+                            duration_ms,
+                            status,
+                            status_message,
+                            error_type,
+                            error_signature,
+                            input_hash,
+                            output_hash,
+                            input_preview,
+                            output_preview,
+                            input_tokens,
+                            output_tokens,
+                            total_tokens,
+                            cost_usd,
+                            cost_confidence,
+                            attributes_json,
+                            raw_ref
+                        ) VALUES (
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        )
+                        """,
+                        [
+                            span.trace_id,
+                            span.span_id,
+                            span.parent_span_id,
+                            span.source,
+                            span.name,
+                            span.span_type,
+                            span.operation_name,
+                            span.agent_name,
+                            span.tool_name,
+                            span.model_name,
+                            span.provider_name,
+                            span.start_time,
+                            span.end_time,
+                            span.duration_ms,
+                            span.status,
+                            span.status_message,
+                            span.error_type,
+                            span.error_signature,
+                            span.input_hash,
+                            span.output_hash,
+                            span.input_preview,
+                            span.output_preview,
+                            span.input_tokens,
+                            span.output_tokens,
+                            span.total_tokens,
+                            span.cost_usd,
+                            span.cost_confidence,
+                            json.dumps(
+                                span.attributes,
+                                ensure_ascii=True,
+                                sort_keys=True,
+                                default=str,
+                            ),
+                            span.raw_ref,
+                        ],
+                    )
+
+                for trace in traces:
+                    connection.execute(
+                        """
+                        INSERT INTO normalized_traces (
+                            trace_id,
+                            source,
+                            project,
+                            root_span_id,
+                            root_name,
+                            session_id,
+                            user_hash,
+                            environment,
+                            version,
+                            tags_json,
+                            start_time,
+                            end_time,
+                            duration_ms,
+                            outcome,
+                            total_cost_usd,
+                            total_input_tokens,
+                            total_output_tokens,
+                            total_tool_calls,
+                            total_model_calls,
+                            raw_ref
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            trace.trace_id,
+                            trace.source,
+                            trace.project,
+                            trace.root_span_id,
+                            trace.root_name,
+                            trace.session_id,
+                            trace.user_hash,
+                            trace.environment,
+                            trace.version,
+                            json.dumps(trace.tags, ensure_ascii=True, sort_keys=True),
+                            trace.start_time,
+                            trace.end_time,
+                            trace.duration_ms,
+                            trace.outcome,
+                            trace.total_cost_usd,
+                            trace.total_input_tokens,
+                            trace.total_output_tokens,
+                            trace.total_tool_calls,
+                            trace.total_model_calls,
+                            trace.raw_ref,
+                        ],
+                    )
+                connection.execute("COMMIT")
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
 
     def stats(self) -> dict[str, int]:
         self.ensure_schema()
