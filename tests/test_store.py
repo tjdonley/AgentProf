@@ -13,7 +13,10 @@ def test_store_creates_schema(tmp_path: Path) -> None:
     store.ensure_schema()
 
     assert store.path.is_file()
-    assert store.migrations() == [(1, "initial_store_schema")]
+    assert store.migrations() == [
+        (1, "initial_store_schema"),
+        (2, "add_normalized_span_retry_fingerprints"),
+    ]
 
 
 def test_store_stats_include_all_tables(tmp_path: Path) -> None:
@@ -32,7 +35,10 @@ def test_store_reset_recreates_schema(tmp_path: Path) -> None:
     store.reset()
 
     assert store.path.is_file()
-    assert store.migrations() == [(1, "initial_store_schema")]
+    assert store.migrations() == [
+        (1, "initial_store_schema"),
+        (2, "add_normalized_span_retry_fingerprints"),
+    ]
 
 
 def test_migrations_is_read_only_for_missing_store(tmp_path: Path) -> None:

@@ -70,6 +70,8 @@ class NormalizedSpan(BaseModel):
     error_signature: str | None = None
     input_hash: str | None = None
     output_hash: str | None = None
+    input_retry_fingerprint: str | None = None
+    output_retry_fingerprint: str | None = None
     input_preview: str | None = None
     output_preview: str | None = None
     input_tokens: int | None = None

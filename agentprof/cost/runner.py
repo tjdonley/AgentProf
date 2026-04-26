@@ -24,8 +24,7 @@ def build_cost_ledger(store: DuckDBStore) -> CostLedgerBuildResult:
     spans = store.fetch_normalized_span_costs()
     records = [
         _cost_record_from_span(span)
-        for span in spans
-        if span.cost_usd is not None
+        for span in _cost_leaf_spans(spans)
     ]
 
     store.replace_cost_ledger(
@@ -68,6 +67,26 @@ def _cost_record_from_span(span: NormalizedSpanCostRow) -> CostLedgerRecord:
         attribution_method=LEDGER_ATTRIBUTION_METHOD,
         confidence=span.cost_confidence,
     )
+
+
+def _cost_leaf_spans(spans: list[NormalizedSpanCostRow]) -> list[NormalizedSpanCostRow]:
+    costed_spans = [span for span in spans if span.cost_usd is not None]
+    by_id = {(span.trace_id, span.span_id): span for span in spans}
+    ancestors_with_costed_descendants: set[tuple[str, str]] = set()
+    for span in costed_spans:
+        parent_id = span.parent_span_id
+        trace_id = span.trace_id
+        visited: set[str] = set()
+        while parent_id and (trace_id, parent_id) in by_id and parent_id not in visited:
+            ancestors_with_costed_descendants.add((trace_id, parent_id))
+            visited.add(parent_id)
+            parent_id = by_id[(trace_id, parent_id)].parent_span_id
+
+    return [
+        span
+        for span in costed_spans
+        if (span.trace_id, span.span_id) not in ancestors_with_costed_descendants
+    ]
 
 
 def _cost_type_for_status(status: str) -> CostType:
