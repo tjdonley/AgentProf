@@ -44,6 +44,7 @@ def test_generate_report_writes_markdown_json_and_store_row(tmp_path: Path) -> N
     assert result.total_wasted_cost_usd == Decimal("0.020000000")
     assert result.report_md_path.is_file()
     assert result.report_json_path.is_file()
+    assert result.report_html_path is None
 
     assert payload["report_id"] == "test-report"
     assert payload["project"] == "tracer"
@@ -61,6 +62,8 @@ def test_generate_report_writes_markdown_json_and_store_row(tmp_path: Path) -> N
     assert reports[0].project == "tracer"
     assert reports[0].summary["issue_count"] == 1
     assert reports[0].report_md_path == str(result.report_md_path)
+    assert reports[0].report_json_path == str(result.report_json_path)
+    assert reports[0].report_html_path is None
     assert store.stats()["reports"] == 1
 
 

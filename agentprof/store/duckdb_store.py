@@ -147,6 +147,7 @@ class ReportRecord:
     summary: dict[str, Any]
     report_md_path: str | None
     report_json_path: str | None
+    report_html_path: str | None = None
 
 
 MIGRATIONS = (
@@ -289,6 +290,7 @@ CREATE TABLE IF NOT EXISTS reports (
     summary_json TEXT NOT NULL DEFAULT '{}',
     report_md_path TEXT,
     report_json_path TEXT,
+    report_html_path TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
 );
 """,
@@ -299,6 +301,13 @@ CREATE TABLE IF NOT EXISTS reports (
         sql="""
 ALTER TABLE normalized_spans ADD COLUMN IF NOT EXISTS input_retry_fingerprint TEXT;
 ALTER TABLE normalized_spans ADD COLUMN IF NOT EXISTS output_retry_fingerprint TEXT;
+""",
+    ),
+    Migration(
+        version=3,
+        name="add_report_html_path",
+        sql="""
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS report_html_path TEXT;
 """,
     ),
 )
@@ -927,8 +936,9 @@ class DuckDBStore:
                         window_end,
                         summary_json,
                         report_md_path,
-                        report_json_path
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        report_json_path,
+                        report_html_path
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         record.report_id,
@@ -943,6 +953,7 @@ class DuckDBStore:
                         ),
                         record.report_md_path,
                         record.report_json_path,
+                        record.report_html_path,
                     ],
                 )
                 connection.execute("COMMIT")
@@ -955,7 +966,7 @@ class DuckDBStore:
         query = """
             SELECT report_id, project, CAST(window_start AS VARCHAR),
                    CAST(window_end AS VARCHAR), summary_json, report_md_path,
-                   report_json_path
+                   report_json_path, report_html_path
             FROM reports
         """
         params: list[str] = []
@@ -976,6 +987,7 @@ class DuckDBStore:
                 summary=json.loads(row[4]),
                 report_md_path=row[5],
                 report_json_path=row[6],
+                report_html_path=row[7],
             )
             for row in rows
         ]
