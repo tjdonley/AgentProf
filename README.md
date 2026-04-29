@@ -44,7 +44,7 @@ This repository is early MVP software. It is usable for local Langfuse export im
 ## Planned / Not Built Yet
 
 - Additional deterministic failure/waste analyzers beyond the current retry-loop, spec-violation, and multi-agent waste detection.
-- HTML report generation.
+- Static HTML report generation. See `docs/html-report-scope.md` for the scoped first implementation.
 - Phoenix, OpenTelemetry, or direct API ingestion.
 - Baseline/diff workflows and CI integration.
 
