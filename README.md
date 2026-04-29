@@ -38,13 +38,12 @@ This repository is early MVP software. It is usable for local Langfuse export im
 - Detect retry loops where the same failing call repeats with the same input fingerprint and error signature.
 - Detect configured tool/spec contract violations from normalized redacted previews and error messages.
 - Estimate multi-agent orchestration overhead against configured or observed single-agent baselines.
-- Generate local Markdown and JSON reports from persisted issues, evidence, costs, and optional visuals.
+- Generate local Markdown, JSON, and static HTML reports from persisted issues, evidence, costs, and optional visuals.
 - List and show generated reports from the local store.
 
 ## Planned / Not Built Yet
 
 - Additional deterministic failure/waste analyzers beyond the current retry-loop, spec-violation, and multi-agent waste detection.
-- Static HTML report generation. See `docs/html-report-scope.md` for the scoped first implementation.
 - Phoenix, OpenTelemetry, or direct API ingestion.
 - Baseline/diff workflows and CI integration.
 
@@ -312,7 +311,7 @@ uv run agentprof report generate \
   --output-dir .agentprof/reports
 ```
 
-Report JSON contains a machine-readable summary, issue details with evidence, and cost ledger entries. Report Markdown contains the same information in a local-first shareable format:
+Report JSON contains a machine-readable summary, issue details with evidence, and cost ledger entries. Report Markdown and static HTML contain the same information in local-first shareable formats:
 
 ```text
 # AgentProf Report: AgentProf
@@ -327,7 +326,7 @@ Report JSON contains a machine-readable summary, issue details with evidence, an
 ![Multi-agent waste estimate](multi-agent-demo-multi-agent-waste.svg)
 ```
 
-When persisted `multi_agent_waste` issues exist, `agentprof report generate` also writes `<report-id>-multi-agent-waste.svg` next to the Markdown/JSON files, embeds it in the Markdown report, and records the artifact filename in `summary.artifacts.multi_agent_waste_svg`.
+When persisted `multi_agent_waste` issues exist, `agentprof report generate` also writes `<report-id>-multi-agent-waste.svg` next to the Markdown/JSON/HTML files, embeds or links it from the Markdown and HTML reports, and records the artifact filename in `summary.artifacts.multi_agent_waste_svg`.
 
 List and inspect generated reports:
 
@@ -335,6 +334,7 @@ List and inspect generated reports:
 uv run agentprof report list
 uv run agentprof report show latest
 uv run agentprof report show latest --format json
+uv run agentprof report show latest --format html
 ```
 
 ## Local Store
@@ -350,7 +350,7 @@ The DuckDB store currently includes these tables:
 - `cost_ledger`
 - `reports`
 
-The `reports` table stores generated report metadata and points to the local Markdown/JSON output files.
+The `reports` table stores generated report metadata and points to the local Markdown/JSON/HTML output files.
 
 ## Development
 
