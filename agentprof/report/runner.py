@@ -88,6 +88,7 @@ def generate_report(
             summary=summary,
             report_md_path=str(markdown_path),
             report_json_path=str(json_path),
+            report_html_path=None,
         )
     )
 
@@ -100,6 +101,7 @@ def generate_report(
         total_wasted_cost_usd=_sum_decimals(issue.wasted_cost_usd for issue in issues),
         report_md_path=markdown_path,
         report_json_path=json_path,
+        report_html_path=None,
     )
 
 
