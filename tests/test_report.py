@@ -44,7 +44,7 @@ def test_generate_report_writes_markdown_json_and_store_row(tmp_path: Path) -> N
     assert result.total_wasted_cost_usd == Decimal("0.020000000")
     assert result.report_md_path.is_file()
     assert result.report_json_path.is_file()
-    assert result.report_html_path is None
+    assert result.report_html_path.is_file()
 
     assert payload["report_id"] == "test-report"
     assert payload["project"] == "tracer"
@@ -63,7 +63,7 @@ def test_generate_report_writes_markdown_json_and_store_row(tmp_path: Path) -> N
     assert reports[0].summary["issue_count"] == 1
     assert reports[0].report_md_path == str(result.report_md_path)
     assert reports[0].report_json_path == str(result.report_json_path)
-    assert reports[0].report_html_path is None
+    assert reports[0].report_html_path == str(result.report_html_path)
     assert store.stats()["reports"] == 1
 
 
@@ -395,14 +395,17 @@ def test_cli_report_generate_writes_outputs() -> None:
         reports = store.fetch_reports(report_id="cli-report")
         markdown_path = Path(".agentprof/reports/cli-report.md")
         json_path = Path(".agentprof/reports/cli-report.json")
+        html_path = Path(".agentprof/reports/cli-report.html")
 
         assert init_result.exit_code == 0
         assert result.exit_code == 0
         assert "Generated AgentProf report" in result.output
         assert "report id: cli-report" in result.output
         assert "issues: 1" in result.output
+        assert "html: .agentprof/reports/cli-report.html" in result.output
         assert markdown_path.is_file()
         assert json_path.is_file()
+        assert html_path.is_file()
         assert len(reports) == 1
 
 
@@ -422,8 +425,13 @@ def test_cli_report_list_and_show_generated_reports() -> None:
             app,
             ["report", "show", "cli-report", "--format", "json"],
         )
+        html_result = runner.invoke(
+            app,
+            ["report", "show", "cli-report", "--format", "html"],
+        )
         markdown_path = Path(".agentprof/reports/cli-report.md")
         json_path = Path(".agentprof/reports/cli-report.json")
+        html_path = Path(".agentprof/reports/cli-report.html")
 
         assert init_result.exit_code == 0
         assert generate_result.exit_code == 0
@@ -437,6 +445,10 @@ def test_cli_report_list_and_show_generated_reports() -> None:
         assert json_result.exit_code == 0
         assert '"report_id": "cli-report"' in json_result.output
         assert json_result.output == json_path.read_text(encoding="utf-8")
+        assert html_result.exit_code == 0
+        assert "<!doctype html>" in html_result.output
+        assert "Repeated failing call to refund_policy_lookup" in html_result.output
+        assert html_result.output == html_path.read_text(encoding="utf-8")
 
 
 def test_cli_report_list_handles_empty_store() -> None:

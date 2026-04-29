@@ -41,6 +41,7 @@ from agentprof.store.duckdb_store import DuckDBStore
 class ReportShowFormat(StrEnum):
     markdown = "markdown"
     json = "json"
+    html = "html"
 
 
 class MultiAgentBaselineMode(StrEnum):
@@ -407,7 +408,7 @@ def report_generate(
     output_dir: Path = typer.Option(
         DEFAULT_REPORT_DIR,
         "--output-dir",
-        help="Directory where Markdown and JSON report files will be written.",
+        help="Directory where Markdown, JSON, and HTML report files will be written.",
     ),
     report_id: str | None = typer.Option(
         None,
@@ -415,7 +416,7 @@ def report_generate(
         help="Optional stable report ID. Defaults to a UTC timestamp-based ID.",
     ),
 ) -> None:
-    """Generate Markdown and JSON reports from persisted analysis results."""
+    """Generate Markdown, JSON, and HTML reports from persisted analysis results."""
 
     try:
         if report_id is not None:
@@ -446,6 +447,7 @@ def report_generate(
     console.print(f"  total wasted cost: {_format_usd(result.total_wasted_cost_usd)}")
     console.print(f"  markdown: {result.report_md_path}")
     console.print(f"  json: {result.report_json_path}")
+    console.print(f"  html: {result.report_html_path}")
 
 
 @report_app.command("list")
@@ -658,7 +660,9 @@ def _validate_report_output_dir(output_dir: Path) -> None:
 
 
 def _report_artifact_path(report, output_format: ReportShowFormat) -> Path | None:
-    if output_format == ReportShowFormat.json:
+    if output_format == ReportShowFormat.html:
+        raw_path = report.report_html_path
+    elif output_format == ReportShowFormat.json:
         raw_path = report.report_json_path
     else:
         raw_path = report.report_md_path

@@ -64,5 +64,5 @@ Required sections:
 - `agentprof report generate --report-id latest` writes `.md`, `.json`, and `.html` files.
 - The HTML report renders all existing Markdown report information.
 - Multi-agent SVG visuals are linked or embedded when present.
-- `agentprof report show latest --format html` prints the HTML artifact after CLI support lands.
+- `agentprof report show latest --format html` prints the HTML artifact.
 - Tests cover escaping, empty reports, issue details, cost rows, optional visuals, and CLI artifact safety.

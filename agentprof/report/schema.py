@@ -15,4 +15,4 @@ class ReportBuildResult(BaseModel):
     total_wasted_cost_usd: Decimal = Field(default=Decimal("0"))
     report_md_path: Path
     report_json_path: Path
-    report_html_path: Path | None = None
+    report_html_path: Path

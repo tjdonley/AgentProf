@@ -69,6 +69,7 @@ def generate_report(
 
     markdown_path = output_dir / f"{report_id}.md"
     json_path = output_dir / f"{report_id}.json"
+    html_path = output_dir / f"{report_id}.html"
     svg_path = output_dir / f"{report_id}-multi-agent-waste.svg"
     if multi_agent_visual is not None:
         svg_path.write_text(_multi_agent_waste_svg(multi_agent_visual), encoding="utf-8")
@@ -79,6 +80,7 @@ def generate_report(
         json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    html_path.write_text(_html_report(payload), encoding="utf-8")
     store.upsert_report(
         ReportRecord(
             report_id=report_id,
@@ -88,7 +90,7 @@ def generate_report(
             summary=summary,
             report_md_path=str(markdown_path),
             report_json_path=str(json_path),
-            report_html_path=None,
+            report_html_path=str(html_path),
         )
     )
 
@@ -101,7 +103,7 @@ def generate_report(
         total_wasted_cost_usd=_sum_decimals(issue.wasted_cost_usd for issue in issues),
         report_md_path=markdown_path,
         report_json_path=json_path,
-        report_html_path=None,
+        report_html_path=html_path,
     )
 
 
