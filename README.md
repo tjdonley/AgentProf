@@ -4,13 +4,70 @@
 
 # AgentProf
 
-AgentProf is a local-first CLI for turning AI-agent traces into evidence-backed failure and waste reports.
+[![Test](https://github.com/tjdonley/AgentProf/actions/workflows/test.yml/badge.svg)](https://github.com/tjdonley/AgentProf/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-The current MVP imports Langfuse observation exports, sanitizes persisted payloads, normalizes spans/traces into DuckDB, runs deterministic analyzers, builds a cost ledger waterfall from normalized span costs, and generates local Markdown/JSON reports with optional SVG visuals. It is designed for teams that want to inspect agent behavior without sending trace data to another service.
+Find hidden waste in your AI-agent traces.
 
-This repository is early MVP software. It is usable for local Langfuse export import, normalization, analysis, cost attribution, and report generation. Additional sources, analyzers, and report formats are still being built.
+AgentProf is a local CLI that turns Langfuse exports and other trace data into evidence-backed reports on retry loops, contract failures, and wasted orchestration cost. It runs on your machine, stores data in DuckDB, and writes static reports you can inspect or share internally.
 
-## At A Glance
+<p align="center">
+  <img src="assets/demo-report-preview.svg" alt="AgentProf demo report preview with issues, wasted spend, and top findings" width="900">
+</p>
+
+## Demo In One Command
+
+From a checkout:
+
+```bash
+uv sync
+uv run agentprof demo --open
+```
+
+After the first package release:
+
+```bash
+uvx agentprof demo --open
+```
+
+The bundled demo imports sample Langfuse traces, runs all current analyzers, and writes a self-contained report under `agentprof-demo/reports/`.
+
+Want to inspect the output before running anything? See the checked-in [demo HTML report](examples/reports/demo.html), [Markdown report](examples/reports/demo.md), and [JSON payload](examples/reports/demo.json).
+
+Expected story:
+
+```text
+AgentProf found 4 issue(s) and $0.060000000 of estimated wasted spend.
+Top finding: multi-agent trace trace-multi-agent-1 cost 2.00x an estimated single-agent baseline across 3 agents.
+```
+
+## What AgentProf Finds
+
+- Repeated failed calls where the same input fails with the same error signature.
+- Tool/spec contract violations such as missing required input fields.
+- Multi-agent orchestration overhead compared with a configured or observed single-agent baseline.
+- Cost ledger entries that separate successful, failed, unknown, and analyzer-attributed waste.
+- Evidence-backed recommendations with affected trace/span IDs and redacted previews.
+
+## Why Local-First
+
+- No outbound telemetry is sent by AgentProf.
+- Raw input/output is not persisted by default.
+- Common secrets and PII are redacted before payloads are stored.
+- Input/output values can be compared by stable HMAC hashes without exposing raw content.
+- Reports are static Markdown, JSON, HTML, and SVG files.
+
+## What AgentProf Is Not
+
+- Not a hosted observability dashboard.
+- Not a trace collection server.
+- Not prompt management.
+- Not a replacement for Langfuse, Phoenix, or LangSmith.
+- Not an eval framework.
+
+AgentProf complements tracing tools by profiling exported traces locally and turning them into fixable waste reports.
+
+## How It Works
 
 <p align="center">
   <img src="assets/agentprof-workflow.svg" alt="AgentProf workflow from import through privacy, normalization, analysis, and reports" width="900">
@@ -22,7 +79,7 @@ This repository is early MVP software. It is usable for local Langfuse export im
 | Privacy | Redacts common secrets and hashes input/output values when configured. |
 | Normalize | Maps provider payloads into canonical spans and traces in local DuckDB. |
 | Analyze | Detects retry loops, configured spec violations, and multi-agent orchestration overhead. |
-| Report | Writes Markdown, JSON, and multi-agent waste SVG artifacts under `.agentprof/reports/`. |
+| Report | Writes Markdown, JSON, HTML, and multi-agent waste SVG artifacts. |
 
 ## What Works Today
 
@@ -41,20 +98,24 @@ This repository is early MVP software. It is usable for local Langfuse export im
 - Generate local Markdown, JSON, and static HTML reports from persisted issues, evidence, costs, and optional visuals.
 - List and show generated reports from the local store.
 
-## Planned / Not Built Yet
+## Current Status
 
-- Additional deterministic failure/waste analyzers beyond the current retry-loop, spec-violation, and multi-agent waste detection.
-- Phoenix, OpenTelemetry, or direct API ingestion.
-- Baseline/diff workflows and CI integration.
+AgentProf is early MVP software, but the core local workflow is usable today for Langfuse export import, normalization, analysis, cost attribution, and report generation.
+
+Planned next:
+
+- Additional deterministic failure/waste analyzers.
+- Generic JSONL, OpenInference/OpenTelemetry, Phoenix, and direct API ingestion.
+- Baseline/diff workflows and CI budget gates.
 
 ## Requirements
 
 - Python 3.11 or newer.
 - [`uv`](https://docs.astral.sh/uv/) for dependency management and command execution.
 
-## Quickstart
+## Using Your Own Langfuse Export
 
-Run the built-in Langfuse fixture through the current end-to-end workflow:
+After running the bundled demo, initialize a workspace and run your own Langfuse observation export through the end-to-end workflow:
 
 ```bash
 uv sync
@@ -68,7 +129,7 @@ uv run agentprof analyze retry-loops
 uv run agentprof analyze spec-violations
 uv run agentprof analyze multi-agent-waste
 uv run agentprof cost ledger
-uv run agentprof report generate
+uv run agentprof report generate --report-id latest
 uv run agentprof report list
 uv run agentprof store stats
 ```
@@ -157,7 +218,7 @@ This replaces the current normalized-span cost ledger entries idempotently and p
 uv run agentprof report generate
 ```
 
-This writes Markdown and JSON report files under `.agentprof/reports/` and stores report metadata in the `reports` table.
+This writes Markdown, JSON, and HTML report files under `.agentprof/reports/` and stores report metadata in the `reports` table.
 
 10. List or inspect generated reports.
 
@@ -208,6 +269,7 @@ The report command writes predictable local artifacts when `--report-id multi-ag
 .agentprof/reports/
   multi-agent-demo.md
   multi-agent-demo.json
+  multi-agent-demo.html
   multi-agent-demo-multi-agent-waste.svg
 ```
 
@@ -228,6 +290,7 @@ Observed mode matches costed successful single-agent traces by normalized root t
 | Command | Purpose |
 | --- | --- |
 | `agentprof --help` | Show top-level CLI help. |
+| `agentprof demo` | Run the full pipeline on bundled sample traces and write a local demo report. |
 | `agentprof init` | Create `agentprof.yml`, workspace directories, and the DuckDB schema. |
 | `agentprof doctor` | Validate that the local workspace and store are usable. |
 | `agentprof import langfuse-export` | Import Langfuse observation exports into `raw_spans`. |
@@ -236,9 +299,9 @@ Observed mode matches costed successful single-agent traces by normalized root t
 | `agentprof analyze spec-violations` | Detect spans that violate configured required field contracts. |
 | `agentprof analyze multi-agent-waste` | Estimate multi-agent orchestration overhead against configured or observed single-agent baselines. |
 | `agentprof cost ledger` | Build `cost_ledger` from normalized span costs and print a waterfall. |
-| `agentprof report generate` | Generate Markdown and JSON reports from persisted analysis results. |
+| `agentprof report generate` | Generate Markdown, JSON, and HTML reports from persisted analysis results. |
 | `agentprof report list` | List generated reports recorded in the local store. |
-| `agentprof report show REPORT_ID` | Print a generated report's Markdown or JSON artifact. |
+| `agentprof report show REPORT_ID` | Print a generated report's Markdown, JSON, or HTML artifact. |
 | `agentprof store stats` | Show row counts for all store tables. |
 | `agentprof store reset --yes` | Delete and recreate the local DuckDB store. |
 
@@ -353,6 +416,13 @@ The DuckDB store currently includes these tables:
 The `reports` table stores generated report metadata and points to the local Markdown/JSON/HTML output files.
 
 ## Development
+
+Useful project docs:
+
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+- [Project pop spec](docs/project-pop-spec.md)
 
 Install dependencies and run tests:
 

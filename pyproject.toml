@@ -1,9 +1,34 @@
 [project]
 name = "agentprof"
-version = "0.0.1"
-description = "Local-first CLI for AI-agent failure-and-waste reports"
+version = "0.1.0"
+description = "Local-first CLI that finds wasted AI-agent spend from retry loops, multi-agent overhead, and broken tool contracts."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Tim Donley" }]
+keywords = [
+    "ai-agents",
+    "llm",
+    "observability",
+    "langfuse",
+    "finops",
+    "cost",
+    "tracing",
+    "duckdb",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Monitoring",
+    "Typing :: Typed",
+]
 dependencies = [
     "duckdb>=1.4.0",
     "pydantic>=2.12.0",
@@ -12,8 +37,20 @@ dependencies = [
     "typer>=0.20.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/tjdonley/AgentProf"
+Repository = "https://github.com/tjdonley/AgentProf"
+Issues = "https://github.com/tjdonley/AgentProf/issues"
+Changelog = "https://github.com/tjdonley/AgentProf/blob/main/CHANGELOG.md"
+
 [project.scripts]
 agentprof = "agentprof.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agentprof"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"agentprof/demo/langfuse_multi_agent_observations.json" = "agentprof/demo/langfuse_multi_agent_observations.json"
 
 [dependency-groups]
 dev = [

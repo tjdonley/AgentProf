@@ -1,0 +1,275 @@
+{
+  "cost_ledger": [
+    {
+      "amount_usd": "0.006000000",
+      "attribution_method": "normalized_span_status",
+      "confidence": "source",
+      "cost_type": "failed_span_cost",
+      "issue_id": null,
+      "span_id": "demo-tool-retry-1",
+      "trace_id": "trace-demo-retry"
+    },
+    {
+      "amount_usd": "0.006000000",
+      "attribution_method": "spec_violation",
+      "confidence": "source",
+      "cost_type": "wasted_spec_violation_cost",
+      "issue_id": "spec_violation:d62c2c3a59097026",
+      "span_id": "demo-tool-retry-1",
+      "trace_id": "trace-demo-retry"
+    },
+    {
+      "amount_usd": "0.006000000",
+      "attribution_method": "normalized_span_status",
+      "confidence": "source",
+      "cost_type": "failed_span_cost",
+      "issue_id": null,
+      "span_id": "demo-tool-retry-2",
+      "trace_id": "trace-demo-retry"
+    },
+    {
+      "amount_usd": "0.006000000",
+      "attribution_method": "retry_loop",
+      "confidence": "source",
+      "cost_type": "wasted_retry_cost",
+      "issue_id": "retry_loop:14f469d943d86373",
+      "span_id": "demo-tool-retry-2",
+      "trace_id": "trace-demo-retry"
+    },
+    {
+      "amount_usd": "0.006000000",
+      "attribution_method": "spec_violation",
+      "confidence": "source",
+      "cost_type": "wasted_spec_violation_cost",
+      "issue_id": "spec_violation:ae3bd3cc2b213fc6",
+      "span_id": "demo-tool-retry-2",
+      "trace_id": "trace-demo-retry"
+    },
+    {
+      "amount_usd": "0.052000000",
+      "attribution_method": "normalized_span_status",
+      "confidence": "source",
+      "cost_type": "successful_span_cost",
+      "issue_id": null,
+      "span_id": "ma-llm-policy",
+      "trace_id": "trace-multi-agent-1"
+    },
+    {
+      "amount_usd": "0.032000000",
+      "attribution_method": "normalized_span_status",
+      "confidence": "source",
+      "cost_type": "successful_span_cost",
+      "issue_id": null,
+      "span_id": "ma-llm-research",
+      "trace_id": "trace-multi-agent-1"
+    },
+    {
+      "amount_usd": "0.042000000",
+      "attribution_method": "multi_agent_waste",
+      "confidence": "estimated",
+      "cost_type": "estimated_multi_agent_overhead",
+      "issue_id": "multi_agent_waste:a7887662c9f550c6",
+      "span_id": "ma-root-1",
+      "trace_id": "trace-multi-agent-1"
+    }
+  ],
+  "generated_at": "2026-05-30T14:11:08.868496Z",
+  "issues": [
+    {
+      "affected_spans": 5,
+      "affected_traces": 1,
+      "confidence": "medium",
+      "evidence": [
+        {
+          "attributes": {
+            "actual_cost_usd": "0.084000000",
+            "agent_count": 3,
+            "agent_names": [
+              "triage_agent",
+              "research_agent",
+              "policy_agent"
+            ],
+            "baseline_cost_usd": "0.04200000000",
+            "baseline_match_count": 0,
+            "baseline_mode": "estimated",
+            "baseline_ratio": "0.50",
+            "baseline_trace_ids": [],
+            "basis": "configured_ratio_estimate",
+            "cost_multiple": "2",
+            "estimated_overhead_usd": "0.04200000000",
+            "handoff_span_ids": []
+          },
+          "evidence_type": "multi_agent_waste",
+          "message": "Trace used 3 distinct agents; estimated orchestration overhead uses a configured single-agent baseline ratio.",
+          "span_id": "ma-root-1",
+          "trace_id": "trace-multi-agent-1"
+        }
+      ],
+      "first_seen": "2026-04-26T11:00:00Z",
+      "issue_id": "multi_agent_waste:a7887662c9f550c6",
+      "kind": "multi_agent_waste",
+      "last_seen": "2026-04-26T11:00:08Z",
+      "potential_savings_usd": "0.042000000",
+      "recommendation": "Compare this multi-agent trace with a configured single-agent baseline before keeping the orchestration path.",
+      "recommended_tests": [
+        "Add an eval that compares the multi-agent trace against the configured single-agent baseline."
+      ],
+      "severity": "medium",
+      "title": "Estimated orchestration overhead in triage_agent",
+      "total_cost_usd": "0.084000000",
+      "wasted_cost_usd": "0.042000000"
+    },
+    {
+      "affected_spans": 2,
+      "affected_traces": 1,
+      "confidence": "high",
+      "evidence": [
+        {
+          "attributes": {
+            "attempt_index": 1,
+            "cost_usd": "0.006000000",
+            "input_preview": "{\"customer_id\": \"cust_ABC123\", \"reason\": \"refund\"}",
+            "name": "refund_policy_lookup",
+            "status": "error"
+          },
+          "evidence_type": "retry_attempt",
+          "message": "Attempt 1 failed with missing required field region.",
+          "span_id": "demo-tool-retry-1",
+          "trace_id": "trace-demo-retry"
+        },
+        {
+          "attributes": {
+            "attempt_index": 2,
+            "cost_usd": "0.006000000",
+            "input_preview": "{\"customer_id\": \"cust_ABC123\", \"reason\": \"refund\"}",
+            "name": "refund_policy_lookup",
+            "status": "error"
+          },
+          "evidence_type": "retry_attempt",
+          "message": "Attempt 2 failed with missing required field region.",
+          "span_id": "demo-tool-retry-2",
+          "trace_id": "trace-demo-retry"
+        }
+      ],
+      "first_seen": "2026-04-26T10:00:01Z",
+      "issue_id": "retry_loop:14f469d943d86373",
+      "kind": "retry_loop",
+      "last_seen": "2026-04-26T10:00:03Z",
+      "potential_savings_usd": "0.006000000",
+      "recommendation": "Stop retrying deterministic failures until the input, schema, or tool precondition has changed.",
+      "recommended_tests": [
+        "Add a regression test that identical failing tool input is not retried without mutation."
+      ],
+      "severity": "medium",
+      "title": "Repeated failing call to refund_policy_lookup",
+      "total_cost_usd": "0.012000000",
+      "wasted_cost_usd": "0.006000000"
+    },
+    {
+      "affected_spans": 1,
+      "affected_traces": 1,
+      "confidence": "high",
+      "evidence": [
+        {
+          "attributes": {
+            "contract_name": "refund_policy_lookup",
+            "input_preview": "{\"customer_id\": \"cust_ABC123\", \"reason\": \"refund\"}",
+            "missing_input_fields": [
+              "region"
+            ],
+            "missing_output_fields": [],
+            "name": "refund_policy_lookup",
+            "output_preview": "missing required field region",
+            "status": "error",
+            "status_message": "missing required field region"
+          },
+          "evidence_type": "spec_violation",
+          "message": "refund_policy_lookup violated refund_policy_lookup: missing input fields: region.",
+          "span_id": "demo-tool-retry-2",
+          "trace_id": "trace-demo-retry"
+        }
+      ],
+      "first_seen": "2026-04-26T10:00:02Z",
+      "issue_id": "spec_violation:ae3bd3cc2b213fc6",
+      "kind": "spec_violation",
+      "last_seen": "2026-04-26T10:00:03Z",
+      "potential_savings_usd": "0.006000000",
+      "recommendation": "Validate tool inputs and outputs against the configured contract before continuing the agent trace.",
+      "recommended_tests": [
+        "Add a contract test for refund_policy_lookup covering required fields."
+      ],
+      "severity": "medium",
+      "title": "Contract violation in refund_policy_lookup",
+      "total_cost_usd": "0.006000000",
+      "wasted_cost_usd": "0.006000000"
+    },
+    {
+      "affected_spans": 1,
+      "affected_traces": 1,
+      "confidence": "high",
+      "evidence": [
+        {
+          "attributes": {
+            "contract_name": "refund_policy_lookup",
+            "input_preview": "{\"customer_id\": \"cust_ABC123\", \"reason\": \"refund\"}",
+            "missing_input_fields": [
+              "region"
+            ],
+            "missing_output_fields": [],
+            "name": "refund_policy_lookup",
+            "output_preview": "missing required field region",
+            "status": "error",
+            "status_message": "missing required field region"
+          },
+          "evidence_type": "spec_violation",
+          "message": "refund_policy_lookup violated refund_policy_lookup: missing input fields: region.",
+          "span_id": "demo-tool-retry-1",
+          "trace_id": "trace-demo-retry"
+        }
+      ],
+      "first_seen": "2026-04-26T10:00:01Z",
+      "issue_id": "spec_violation:d62c2c3a59097026",
+      "kind": "spec_violation",
+      "last_seen": "2026-04-26T10:00:02Z",
+      "potential_savings_usd": "0.006000000",
+      "recommendation": "Validate tool inputs and outputs against the configured contract before continuing the agent trace.",
+      "recommended_tests": [
+        "Add a contract test for refund_policy_lookup covering required fields."
+      ],
+      "severity": "medium",
+      "title": "Contract violation in refund_policy_lookup",
+      "total_cost_usd": "0.006000000",
+      "wasted_cost_usd": "0.006000000"
+    }
+  ],
+  "project": "AgentProf Demo",
+  "report_id": "demo",
+  "summary": {
+    "affected_span_count": 3,
+    "affected_trace_count": 2,
+    "artifacts": {
+      "multi_agent_waste_svg": "demo-multi-agent-waste.svg"
+    },
+    "cost_entry_count": 8,
+    "costs_by_type_usd": {
+      "estimated_multi_agent_overhead": "0.042000000",
+      "failed_span_cost": "0.012000000",
+      "successful_span_cost": "0.084000000",
+      "wasted_retry_cost": "0.006000000",
+      "wasted_spec_violation_cost": "0.012000000"
+    },
+    "evidence_count": 5,
+    "generated_at": "2026-05-30T14:11:08.868496Z",
+    "issue_count": 4,
+    "issues_by_kind": {
+      "multi_agent_waste": 1,
+      "retry_loop": 1,
+      "spec_violation": 2
+    },
+    "issues_by_severity": {
+      "medium": 4
+    },
+    "total_potential_savings_usd": "0.060000000",
+    "total_wasted_cost_usd": "0.060000000"
+  }
+}

@@ -6,6 +6,7 @@ import os
 import stat
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+from importlib import resources
 from pathlib import Path
 
 import typer
@@ -21,6 +22,7 @@ from agentprof.config import (
     APP_SUBDIRS,
     CONFIG_FILE,
     AgentProfConfig,
+    SpecContractConfig,
     ensure_workspace_dirs,
     load_config,
     write_workspace_gitignore,
@@ -53,6 +55,10 @@ console = Console()
 error_console = Console(stderr=True)
 REPORT_SHOW_MAX_BYTES = 1_048_576
 REPORT_SHOW_CHUNK_SIZE = 64 * 1024
+DEMO_DIR_DEFAULT = Path("agentprof-demo")
+DEMO_SALT = "agentprof-demo-hash-salt-0001"
+DEMO_REPORT_ID = "demo"
+DEMO_MARKER_FILE = ".agentprof-demo"
 app = typer.Typer(
     name="agentprof",
     help="Profile AI-agent traces and produce local failure-and-waste reports.",
@@ -136,6 +142,142 @@ def init(
         console.print("Created or verified:")
         for path in created:
             console.print(f"  {path}")
+
+
+@app.command()
+def demo(
+    directory: Path = typer.Option(
+        DEMO_DIR_DEFAULT,
+        "--dir",
+        help="Directory for the self-contained demo workspace.",
+    ),
+    open_report: bool = typer.Option(
+        False,
+        "--open",
+        help="Open the generated HTML report in your browser when finished.",
+    ),
+) -> None:
+    """Run the whole AgentProf pipeline on bundled sample traces in one command."""
+
+    config = AgentProfConfig()
+    config.project.name = "AgentProf Demo"
+    config.store.path = directory / "data" / "agentprof.duckdb"
+    config.analyzers.spec_violations.contracts = [
+        SpecContractConfig(
+            name="refund_policy_lookup",
+            required_input_fields=["customer_id", "region"],
+        )
+    ]
+    try:
+        _ensure_safe_demo_directory(directory, config.store.path)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    previous_salt = os.environ.get(config.privacy.hmac_salt_env)
+    os.environ[config.privacy.hmac_salt_env] = DEMO_SALT
+
+    try:
+        _run_demo_pipeline(config=config, directory=directory, open_report=open_report)
+    finally:
+        if previous_salt is None:
+            os.environ.pop(config.privacy.hmac_salt_env, None)
+        else:
+            os.environ[config.privacy.hmac_salt_env] = previous_salt
+
+
+def _ensure_safe_demo_directory(directory: Path, store_path: Path) -> None:
+    resolved_directory = _resolve_path(directory)
+    resolved_default = _resolve_path(DEMO_DIR_DEFAULT)
+    marker_path = directory / DEMO_MARKER_FILE
+
+    if (
+        store_path.exists()
+        and resolved_directory != resolved_default
+        and not marker_path.exists()
+    ):
+        raise ValueError(
+            "Refusing to reset an existing AgentProf store in an unmarked demo "
+            "directory. Choose an empty --dir or remove the store manually."
+        )
+
+    directory.mkdir(parents=True, exist_ok=True)
+    marker_path.write_text("AgentProf demo workspace\n", encoding="utf-8")
+
+
+def _run_demo_pipeline(
+    *,
+    config: AgentProfConfig,
+    directory: Path,
+    open_report: bool,
+) -> None:
+    store = DuckDBStore(config.store.path)
+    store.reset()
+
+    console.print(
+        "[bold]Running AgentProf on bundled multi-agent sample traces...[/bold]"
+    )
+
+    from agentprof.demo import DEMO_OBSERVATIONS_RESOURCE
+
+    resource = resources.files("agentprof.demo") / DEMO_OBSERVATIONS_RESOURCE
+    with resources.as_file(resource) as observations_path:
+        import_result = import_langfuse_export(
+            observations_path=observations_path,
+            store=store,
+            config=config,
+        )
+    console.print(f"  imported {import_result.observations_imported} sample observations")
+
+    normalize_store(store)
+    console.print("  normalized spans and traces")
+
+    analyze_retry_loops(store)
+    analyze_spec_violations(store, contracts=config.analyzers.spec_violations.contracts)
+    waste = analyze_multi_agent_waste(
+        store,
+        baseline_ratio=Decimal("0.50"),
+        baseline_mode=MultiAgentBaselineMode.estimated.value,
+        min_agents=2,
+        min_overhead=Decimal("0"),
+        min_baseline_matches=1,
+    )
+    console.print("  ran retry-loop, spec-violation, and multi-agent-waste analyzers")
+
+    build_cost_ledger(store)
+    report = generate_report(
+        store,
+        project=config.project.name,
+        output_dir=directory / "reports",
+        report_id=DEMO_REPORT_ID,
+    )
+
+    console.print()
+    console.print("[green]Demo complete.[/green]")
+    console.print(
+        f"  AgentProf found [bold]{report.issues}[/bold] issue(s) and "
+        f"[bold]{_format_usd(report.total_wasted_cost_usd)}[/bold] of estimated wasted spend."
+    )
+    if waste.findings:
+        top = waste.findings[0]
+        console.print(
+            f"  Top finding: multi-agent trace {top.trace_id} cost "
+            f"{top.cost_multiple:.2f}x an estimated single-agent baseline "
+            f"across {top.agent_count} agents."
+        )
+    console.print()
+    console.print("  Open your report:")
+    console.print(f"    HTML:     {report.report_html_path}")
+    console.print(f"    Markdown: {report.report_md_path}")
+    console.print(f"    JSON:     {report.report_json_path}")
+    console.print()
+    console.print(
+        "  Next: run `agentprof init` in your own project, then "
+        "`agentprof import langfuse-export` with your own Langfuse export."
+    )
+
+    if open_report:
+        typer.launch(str(report.report_html_path))
 
 
 @app.command()

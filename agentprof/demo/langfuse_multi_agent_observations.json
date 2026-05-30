@@ -1,0 +1,133 @@
+[
+  {
+    "id": "demo-root-retry",
+    "traceId": "trace-demo-retry",
+    "parentObservationId": null,
+    "type": "SPAN",
+    "name": "support_agent",
+    "startTime": "2026-04-26T10:00:00.000Z",
+    "endTime": "2026-04-26T10:00:04.000Z",
+    "input": "Customer user@example.com requested a refund. Authorization: Bearer demo-secret-value-12345",
+    "output": "Routing to refund_policy_lookup for customer cust_ABC123.",
+    "metadata": {
+      "Authorization": "Bearer nested-demo-secret-value-12345"
+    },
+    "level": "DEFAULT",
+    "statusMessage": ""
+  },
+  {
+    "id": "demo-tool-retry-1",
+    "traceId": "trace-demo-retry",
+    "parentObservationId": "demo-root-retry",
+    "type": "SPAN",
+    "name": "refund_policy_lookup",
+    "startTime": "2026-04-26T10:00:01.000Z",
+    "endTime": "2026-04-26T10:00:02.000Z",
+    "costDetails": {
+      "total": "0.006"
+    },
+    "input": "{\"customer_id\": \"cust_ABC123\", \"reason\": \"refund\"}",
+    "output": "missing required field region",
+    "level": "ERROR",
+    "statusMessage": "missing required field region"
+  },
+  {
+    "id": "demo-tool-retry-2",
+    "traceId": "trace-demo-retry",
+    "parentObservationId": "demo-root-retry",
+    "type": "SPAN",
+    "name": "refund_policy_lookup",
+    "startTime": "2026-04-26T10:00:02.000Z",
+    "endTime": "2026-04-26T10:00:03.000Z",
+    "costDetails": {
+      "total": "0.006"
+    },
+    "input": "{\"customer_id\": \"cust_ABC123\", \"reason\": \"refund\"}",
+    "output": "missing required field region",
+    "level": "ERROR",
+    "statusMessage": "missing required field region"
+  },
+  {
+    "id": "ma-root-1",
+    "traceId": "trace-multi-agent-1",
+    "parentObservationId": null,
+    "type": "SPAN",
+    "name": "triage_agent",
+    "startTime": "2026-04-26T11:00:00.000Z",
+    "endTime": "2026-04-26T11:00:08.000Z",
+    "input": "Customer asks whether a delayed order qualifies for a refund.",
+    "output": "Delegate to research_agent and policy_agent before answering.",
+    "level": "DEFAULT",
+    "statusMessage": ""
+  },
+  {
+    "id": "ma-agent-research",
+    "traceId": "trace-multi-agent-1",
+    "parentObservationId": "ma-root-1",
+    "type": "AGENT",
+    "name": "research_agent",
+    "startTime": "2026-04-26T11:00:01.000Z",
+    "endTime": "2026-04-26T11:00:04.000Z",
+    "input": "Find account and shipment context.",
+    "output": "Order was delayed by four days.",
+    "level": "DEFAULT",
+    "statusMessage": ""
+  },
+  {
+    "id": "ma-llm-research",
+    "traceId": "trace-multi-agent-1",
+    "parentObservationId": "ma-agent-research",
+    "type": "GENERATION",
+    "name": "research_agent_reasoning",
+    "startTime": "2026-04-26T11:00:01.500Z",
+    "endTime": "2026-04-26T11:00:03.500Z",
+    "model": "gpt-4o-mini",
+    "usageDetails": {
+      "input": 450,
+      "output": 160,
+      "total": 610
+    },
+    "costDetails": {
+      "total": "0.032"
+    },
+    "input": "Summarize the customer account and shipment timeline.",
+    "output": "The order was delayed by four days after warehouse handoff.",
+    "level": "DEFAULT",
+    "statusMessage": ""
+  },
+  {
+    "id": "ma-agent-policy",
+    "traceId": "trace-multi-agent-1",
+    "parentObservationId": "ma-root-1",
+    "type": "AGENT",
+    "name": "policy_agent",
+    "startTime": "2026-04-26T11:00:04.000Z",
+    "endTime": "2026-04-26T11:00:07.000Z",
+    "input": "Check refund policy for delayed shipments.",
+    "output": "Refund is allowed when delivery is delayed by more than three days.",
+    "level": "DEFAULT",
+    "statusMessage": ""
+  },
+  {
+    "id": "ma-llm-policy",
+    "traceId": "trace-multi-agent-1",
+    "parentObservationId": "ma-agent-policy",
+    "type": "GENERATION",
+    "name": "policy_agent_reasoning",
+    "startTime": "2026-04-26T11:00:04.500Z",
+    "endTime": "2026-04-26T11:00:06.500Z",
+    "model": "gpt-4o-mini",
+    "usageDetails": {
+      "input": 700,
+      "output": 220,
+      "total": 920
+    },
+    "costDetails": {
+      "total": "0.052"
+    },
+    "input": "Apply refund policy to the delayed shipment facts.",
+    "output": "The policy allows a refund because the shipment was delayed by four days.",
+    "level": "DEFAULT",
+    "statusMessage": ""
+  }
+]

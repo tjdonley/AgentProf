@@ -1,0 +1,37 @@
+name: Import source request
+description: Request support for a trace export format or observability backend.
+title: "[import] "
+labels: ["import", "enhancement"]
+body:
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: Which tool, backend, or file format should AgentProf import?
+      placeholder: "OpenInference JSON, Phoenix export, custom JSONL, etc."
+    validations:
+      required: true
+  - type: textarea
+    id: format
+    attributes:
+      label: Export shape
+      description: Describe the export format and link docs if available.
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Sanitized sample
+      description: Paste a small redacted sample if possible.
+      render: json
+  - type: checkboxes
+    id: data
+    attributes:
+      label: Useful fields
+      options:
+        - label: Trace/span IDs and parent links
+        - label: Status or error fields
+        - label: Input/output payloads or hashes
+        - label: Token counts
+        - label: Cost fields
+        - label: Model/provider fields
