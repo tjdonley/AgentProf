@@ -9,13 +9,31 @@
 
 Find hidden waste in your AI-agent traces.
 
-AgentProf is a local CLI that turns Langfuse exports and other trace data into evidence-backed reports on retry loops, contract failures, and wasted orchestration cost. It runs on your machine, stores data in DuckDB, and writes static reports you can inspect or share internally.
+AgentProf answers the next question after your trace viewer shows what happened: what did this agent waste, why did it happen, and what should you fix first?
+
+It turns Langfuse exports and other trace data into evidence-backed reports on retry loops, contract failures, and wasted orchestration cost. It runs on your machine, stores data in DuckDB, and writes static reports you can inspect or share internally.
+
+The bundled demo shows the problem before you connect real data: one trace spends 50% of its cost on multi-agent orchestration overhead, and another repeats the same broken `refund_policy_lookup` call with the same missing `region` field.
+
+Use AgentProf when you need to:
+
+- debug Langfuse traces from exported observations without sending trace data to another service.
+- detect agent retry loops where the same failing call repeats with the same input and error signature.
+- run an LLM agent cost profiler that attributes spend to retries, contract failures, and multi-agent overhead.
+- add local agent observability through static Markdown, JSON, HTML, and SVG reports.
 
 <p align="center">
   <img src="assets/demo-report-preview.svg" alt="AgentProf demo report preview with issues, wasted spend, and top findings" width="900">
 </p>
 
 ## Demo In One Command
+
+Expected story:
+
+```text
+AgentProf found 4 issue(s) and $0.060000000 of estimated wasted spend.
+Top finding: multi-agent trace trace-multi-agent-1 cost 2.00x an estimated single-agent baseline across 3 agents.
+```
 
 From a checkout:
 
@@ -34,12 +52,15 @@ The bundled demo imports sample Langfuse traces, runs all current analyzers, and
 
 Want to inspect the output before running anything? See the checked-in [demo HTML report](examples/reports/demo.html), [Markdown report](examples/reports/demo.md), and [JSON payload](examples/reports/demo.json).
 
-Expected story:
+## Waste Patterns It Flags
 
-```text
-AgentProf found 4 issue(s) and $0.060000000 of estimated wasted spend.
-Top finding: multi-agent trace trace-multi-agent-1 cost 2.00x an estimated single-agent baseline across 3 agents.
-```
+| Symptom in the trace | What AgentProf reports | Why it matters |
+| --- | --- | --- |
+| Two identical failed `refund_policy_lookup` calls | `retry_loop` with 1 wasted retry attempt and $0.006000000 of retry waste | Stop retrying deterministic tool failures until the input changes. |
+| Tool input is missing `region` | Two `spec_violation` findings with affected span IDs and redacted evidence | Catch broken tool contracts before the agent keeps spending. |
+| A three-agent triage path costs $0.084000000 | `multi_agent_waste` estimates $0.042000000 overhead against a $0.042000000 single-agent baseline | Compare orchestration against a simpler path before keeping it. |
+
+See [Debug Langfuse traces with AgentProf](docs/debug-langfuse-traces.md) for the concrete report snippets and before/after framing.
 
 ## What AgentProf Finds
 
@@ -48,6 +69,13 @@ Top finding: multi-agent trace trace-multi-agent-1 cost 2.00x an estimated singl
 - Multi-agent orchestration overhead compared with a configured or observed single-agent baseline.
 - Cost ledger entries that separate successful, failed, unknown, and analyzer-attributed waste.
 - Evidence-backed recommendations with affected trace/span IDs and redacted previews.
+
+## Searchable Use Cases
+
+- Debug Langfuse traces after an agent run looks expensive or hard to explain.
+- Detect agent retry loops caused by deterministic tool, schema, or precondition failures.
+- Use a local LLM agent cost profiler before adding another hosted observability surface.
+- Run local agent observability reports for audits, postmortems, and teammate handoffs.
 
 ## Why Local-First
 
@@ -113,7 +141,7 @@ Planned next:
 - Python 3.11 or newer.
 - [`uv`](https://docs.astral.sh/uv/) for dependency management and command execution.
 
-## Using Your Own Langfuse Export
+## Debug Langfuse Traces From Your Own Export
 
 After running the bundled demo, initialize a workspace and run your own Langfuse observation export through the end-to-end workflow:
 
@@ -180,7 +208,7 @@ uv run agentprof normalize
 
 This maps provider-specific observation payloads into canonical `normalized_spans` and `normalized_traces` tables.
 
-5. Detect retry loops.
+5. Detect agent retry loops.
 
 ```bash
 uv run agentprof analyze retry-loops
@@ -238,7 +266,7 @@ uv run agentprof store stats
 
 ## Multi-Agent Waste Demo
 
-The costed multi-agent fixture shows the current baseline-estimate story without requiring custom trace data:
+The costed multi-agent fixture shows a delayed-order refund question that fans out from `triage_agent` to `research_agent` and `policy_agent`, then compares that orchestration shape with a configured single-agent baseline:
 
 ```bash
 uv run agentprof store reset --yes

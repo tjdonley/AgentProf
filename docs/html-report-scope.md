@@ -2,6 +2,8 @@
 
 This document defines the first implementation segment for HTML reports. It is intentionally narrow: add a static report artifact that extends the existing local report pipeline without introducing a dashboard, server, JavaScript framework, or external assets.
 
+The HTML report is the local agent observability artifact: a static, offline way to debug Langfuse traces, inspect LLM agent cost profiler output, and review retry-loop evidence.
+
 ## Goal
 
 `agentprof report generate` should produce a local HTML report alongside the existing Markdown, JSON, and optional SVG artifacts.
