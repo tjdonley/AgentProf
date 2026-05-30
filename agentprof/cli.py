@@ -58,6 +58,7 @@ REPORT_SHOW_CHUNK_SIZE = 64 * 1024
 DEMO_DIR_DEFAULT = Path("agentprof-demo")
 DEMO_SALT = "agentprof-demo-hash-salt-0001"
 DEMO_REPORT_ID = "demo"
+DEMO_MARKER_FILE = ".agentprof-demo"
 app = typer.Typer(
     name="agentprof",
     help="Profile AI-agent traces and produce local failure-and-waste reports.",
@@ -167,6 +168,11 @@ def demo(
             required_input_fields=["customer_id", "region"],
         )
     ]
+    try:
+        _ensure_safe_demo_directory(directory, config.store.path)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
 
     previous_salt = os.environ.get(config.privacy.hmac_salt_env)
     os.environ[config.privacy.hmac_salt_env] = DEMO_SALT
@@ -178,6 +184,25 @@ def demo(
             os.environ.pop(config.privacy.hmac_salt_env, None)
         else:
             os.environ[config.privacy.hmac_salt_env] = previous_salt
+
+
+def _ensure_safe_demo_directory(directory: Path, store_path: Path) -> None:
+    resolved_directory = _resolve_path(directory)
+    resolved_default = _resolve_path(DEMO_DIR_DEFAULT)
+    marker_path = directory / DEMO_MARKER_FILE
+
+    if (
+        store_path.exists()
+        and resolved_directory != resolved_default
+        and not marker_path.exists()
+    ):
+        raise ValueError(
+            "Refusing to reset an existing AgentProf store in an unmarked demo "
+            "directory. Choose an empty --dir or remove the store manually."
+        )
+
+    directory.mkdir(parents=True, exist_ok=True)
+    marker_path.write_text("AgentProf demo workspace\n", encoding="utf-8")
 
 
 def _run_demo_pipeline(

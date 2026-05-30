@@ -52,6 +52,7 @@ def test_demo_runs_self_contained_pipeline(monkeypatch) -> None:
         assert "2.00x" in result.output
         assert "baseline across 3 agents" in result.output
         assert not Path(".agentprof").exists()
+        assert Path("agentprof-demo/.agentprof-demo").is_file()
         assert Path("agentprof-demo/data/agentprof.duckdb").is_file()
         assert (report_dir / "demo.html").is_file()
         assert (report_dir / "demo.md").is_file()
@@ -75,6 +76,16 @@ def test_demo_uses_demo_salt_when_existing_salt_is_weak(monkeypatch) -> None:
         assert result.exit_code == 0
         assert "Demo complete" in result.output
         assert os.environ["AGENTPROF_HASH_SALT"] == "short"
+
+
+def test_demo_refuses_to_reset_existing_unmarked_store() -> None:
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        demo_result = runner.invoke(app, ["demo", "--dir", ".agentprof"])
+
+        assert init_result.exit_code == 0
+        assert demo_result.exit_code == 2
+        assert "Refusing to reset an existing AgentProf store" in demo_result.output
 
 
 def test_doctor_requires_init() -> None:
