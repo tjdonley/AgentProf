@@ -4,7 +4,7 @@ This spec turns AgentProf from a capable local trace tool into a project people 
 
 The goal is not to become a full observability platform. The goal is to own a sharper category:
 
-> AgentProf is the local profiler for AI-agent traces. It finds retry loops, contract failures, and wasted orchestration spend in traces you already have.
+> AgentProf is the local LLM agent cost profiler for AI-agent traces. It helps teams debug Langfuse traces, detect agent retry loops, and turn local agent observability into fixable waste reports.
 
 ## Problem
 
@@ -60,6 +60,13 @@ Short tagline:
 One-sentence pitch:
 
 > AgentProf is a local CLI that turns existing agent traces into evidence-backed reports on retries, contract failures, and wasted orchestration cost.
+
+Searchable positioning phrases:
+
+- debug Langfuse traces from exports
+- detect agent retry loops with deterministic evidence
+- LLM agent cost profiler for wasted spend
+- local agent observability without a hosted dashboard
 
 Comparison frame:
 

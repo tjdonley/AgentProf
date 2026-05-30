@@ -1,7 +1,7 @@
 [project]
 name = "agentprof"
 version = "0.1.0"
-description = "Local-first CLI that finds wasted AI-agent spend from retry loops, multi-agent overhead, and broken tool contracts."
+description = "Local LLM agent cost profiler to debug Langfuse traces, detect agent retry loops, and report wasted orchestration spend."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -9,11 +9,22 @@ license-files = ["LICENSE"]
 authors = [{ name = "Tim Donley" }]
 keywords = [
     "ai-agents",
+    "ai-agent-debugging",
+    "agent-observability",
     "llm",
+    "llm-cost-profiler",
     "observability",
     "langfuse",
     "finops",
     "cost",
+    "cost-optimization",
+    "agentops",
+    "llmops",
+    "agent-retry-loops",
+    "local-agent-observability",
+    "llm-agent-cost-profiler",
+    "retry-loops",
+    "trace-analysis",
     "tracing",
     "duckdb",
 ]
@@ -39,9 +50,11 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/tjdonley/AgentProf"
+Documentation = "https://github.com/tjdonley/AgentProf#readme"
 Repository = "https://github.com/tjdonley/AgentProf"
 Issues = "https://github.com/tjdonley/AgentProf/issues"
 Changelog = "https://github.com/tjdonley/AgentProf/blob/main/CHANGELOG.md"
+"Demo Report" = "https://github.com/tjdonley/AgentProf/blob/main/examples/reports/demo.html"
 
 [project.scripts]
 agentprof = "agentprof.cli:app"
