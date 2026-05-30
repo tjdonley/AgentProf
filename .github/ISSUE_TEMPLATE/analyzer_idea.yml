@@ -1,0 +1,30 @@
+name: Analyzer idea
+description: Suggest a deterministic failure or waste detector.
+title: "[analyzer] "
+labels: ["analyzer", "enhancement"]
+body:
+  - type: textarea
+    id: finding
+    attributes:
+      label: Finding
+      description: What should AgentProf detect?
+      placeholder: "Example: tool returned an error, but the agent continued and failed later."
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence available in traces
+      description: Which span fields, statuses, costs, names, or parent links make this detectable?
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommended fix
+      description: What should the report tell users to do?
+  - type: textarea
+    id: fixture
+    attributes:
+      label: Example trace shape
+      description: Share a sanitized trace snippet if you can.

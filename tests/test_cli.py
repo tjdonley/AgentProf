@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -33,6 +35,46 @@ def test_init_creates_workspace() -> None:
         for subdir in APP_SUBDIRS:
             assert (Path(".agentprof") / subdir).is_dir()
         assert DEFAULT_STORE_PATH.is_file()
+
+
+def test_demo_runs_self_contained_pipeline(monkeypatch) -> None:
+    monkeypatch.delenv("AGENTPROF_HASH_SALT", raising=False)
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(app, ["demo"])
+        report_dir = Path("agentprof-demo/reports")
+        payload = json.loads((report_dir / "demo.json").read_text(encoding="utf-8"))
+
+        assert result.exit_code == 0
+        assert "Demo complete" in result.output
+        assert "AgentProf found 4 issue(s)" in result.output
+        assert "$0.060000000" in result.output
+        assert "2.00x" in result.output
+        assert "baseline across 3 agents" in result.output
+        assert not Path(".agentprof").exists()
+        assert Path("agentprof-demo/data/agentprof.duckdb").is_file()
+        assert (report_dir / "demo.html").is_file()
+        assert (report_dir / "demo.md").is_file()
+        assert (report_dir / "demo.json").is_file()
+        assert (report_dir / "demo-multi-agent-waste.svg").is_file()
+        assert payload["summary"]["issues_by_kind"] == {
+            "multi_agent_waste": 1,
+            "retry_loop": 1,
+            "spec_violation": 2,
+        }
+        assert payload["summary"]["total_wasted_cost_usd"] == "0.060000000"
+        assert "AGENTPROF_HASH_SALT" not in os.environ
+
+
+def test_demo_uses_demo_salt_when_existing_salt_is_weak(monkeypatch) -> None:
+    monkeypatch.setenv("AGENTPROF_HASH_SALT", "short")
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(app, ["demo"])
+
+        assert result.exit_code == 0
+        assert "Demo complete" in result.output
+        assert os.environ["AGENTPROF_HASH_SALT"] == "short"
 
 
 def test_doctor_requires_init() -> None:
