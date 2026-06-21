@@ -4,10 +4,12 @@ import codecs
 import errno
 import os
 import stat
+from collections.abc import Callable
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from importlib import resources
 from pathlib import Path
+from typing import TypeVar
 
 import typer
 from rich.console import Console
@@ -37,7 +39,10 @@ from agentprof.ingest.langfuse_export import (
 from agentprof.normalize.runner import normalize_store
 from agentprof.privacy.hashing import MissingSaltError, salt_from_env
 from agentprof.report.runner import DEFAULT_REPORT_DIR, generate_report, validate_report_id
-from agentprof.store.duckdb_store import DuckDBStore
+from agentprof.store.duckdb_store import DuckDBStore, StoreConnectionError
+
+
+T = TypeVar("T")
 
 
 class ReportShowFormat(StrEnum):
@@ -97,6 +102,19 @@ def _load_config_or_exit() -> AgentProfConfig:
     return config
 
 
+def _store_call(action: Callable[[], T]) -> T:
+    try:
+        return action()
+    except StoreConnectionError as exc:
+        _exit_store_locked(exc)
+
+
+def _exit_store_locked(exc: StoreConnectionError) -> None:
+    console.print("[red]AgentProf store is locked.[/red]")
+    console.print(str(exc))
+    raise typer.Exit(code=2) from exc
+
+
 @app.callback()
 def main(
     version: bool = typer.Option(
@@ -134,7 +152,7 @@ def init(
 
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
-    store.ensure_schema()
+    _store_call(store.ensure_schema)
     created.append(str(config.store.path))
 
     console.print("[green]AgentProf initialized.[/green]")
@@ -178,7 +196,13 @@ def demo(
     os.environ[config.privacy.hmac_salt_env] = DEMO_SALT
 
     try:
-        _run_demo_pipeline(config=config, directory=directory, open_report=open_report)
+        _store_call(
+            lambda: _run_demo_pipeline(
+                config=config,
+                directory=directory,
+                open_report=open_report,
+            )
+        )
     finally:
         if previous_salt is None:
             os.environ.pop(config.privacy.hmac_salt_env, None)
@@ -305,6 +329,8 @@ def doctor() -> None:
     try:
         config = load_config()
         DuckDBStore(config.store.path).migrations()
+    except StoreConnectionError as exc:
+        _exit_store_locked(exc)
     except Exception as exc:
         console.print("[red]AgentProf workspace is not usable.[/red]")
         console.print(f"Store/config check failed: {exc}")
@@ -332,7 +358,7 @@ def normalize(
 
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
-    result = normalize_store(store, source=source)
+    result = _store_call(lambda: normalize_store(store, source=source))
     quality = result.data_quality
 
     console.print("[green]Normalized imported spans.[/green]")
@@ -358,7 +384,7 @@ def cost_ledger() -> None:
 
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
-    result = build_cost_ledger(store)
+    result = _store_call(lambda: build_cost_ledger(store))
 
     console.print("[green]Built cost ledger.[/green]")
     console.print(f"  normalized spans seen: {result.normalized_spans_seen}")
@@ -392,7 +418,7 @@ def analyze_retry_loops_command(
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
     try:
-        result = analyze_retry_loops(store, min_attempts=min_attempts)
+        result = _store_call(lambda: analyze_retry_loops(store, min_attempts=min_attempts))
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=2) from exc
@@ -433,7 +459,7 @@ def analyze_spec_violations_command() -> None:
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
     contracts = config.analyzers.spec_violations.contracts
-    result = analyze_spec_violations(store, contracts=contracts)
+    result = _store_call(lambda: analyze_spec_violations(store, contracts=contracts))
 
     console.print("[green]Analyzed spec violations.[/green]")
     console.print(f"  normalized spans seen: {result.normalized_spans_seen}")
@@ -497,13 +523,15 @@ def analyze_multi_agent_waste_command(
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
     try:
-        result = analyze_multi_agent_waste(
-            store,
-            baseline_ratio=_parse_decimal_option(baseline_ratio, "baseline_ratio"),
-            baseline_mode=baseline_mode.value,
-            min_agents=min_agents,
-            min_overhead=_parse_decimal_option(min_overhead, "min_overhead"),
-            min_baseline_matches=min_baseline_matches,
+        result = _store_call(
+            lambda: analyze_multi_agent_waste(
+                store,
+                baseline_ratio=_parse_decimal_option(baseline_ratio, "baseline_ratio"),
+                baseline_mode=baseline_mode.value,
+                min_agents=min_agents,
+                min_overhead=_parse_decimal_option(min_overhead, "min_overhead"),
+                min_baseline_matches=min_baseline_matches,
+            )
         )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -571,11 +599,13 @@ def report_generate(
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
     try:
-        result = generate_report(
-            store,
-            project=config.project.name,
-            output_dir=output_dir,
-            report_id=report_id,
+        result = _store_call(
+            lambda: generate_report(
+                store,
+                project=config.project.name,
+                output_dir=output_dir,
+                report_id=report_id,
+            )
         )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -598,7 +628,7 @@ def report_list() -> None:
 
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
-    reports = store.fetch_reports()
+    reports = _store_call(store.fetch_reports)
 
     if not reports:
         console.print("No reports have been generated yet.")
@@ -642,7 +672,7 @@ def report_show(
 
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
-    reports = store.fetch_reports(report_id=report_id)
+    reports = _store_call(lambda: store.fetch_reports(report_id=report_id))
     if not reports:
         console.print(f"[red]Report `{report_id}` was not found.[/red]")
         raise typer.Exit(code=2)
@@ -664,7 +694,7 @@ def store_stats() -> None:
 
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
-    stats = store.stats()
+    stats = _store_call(store.stats)
 
     table = Table(title=f"AgentProf store: {config.store.path}")
     table.add_column("Table")
@@ -692,7 +722,7 @@ def store_reset(
             abort=True,
         )
 
-    DuckDBStore(config.store.path).reset()
+    _store_call(lambda: DuckDBStore(config.store.path).reset())
     console.print(f"[green]Reset local store at {config.store.path}.[/green]")
 
 
@@ -718,11 +748,13 @@ def import_langfuse_export_command(
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
     try:
-        result = import_langfuse_export(
-            observations_path=observations,
-            store=store,
-            config=config,
-            file_format=file_format,
+        result = _store_call(
+            lambda: import_langfuse_export(
+                observations_path=observations,
+                store=store,
+                config=config,
+                file_format=file_format,
+            )
         )
     except MissingSaltError as exc:
         console.print(

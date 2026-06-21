@@ -150,6 +150,16 @@ class ReportRecord:
     report_html_path: str | None = None
 
 
+class StoreConnectionError(RuntimeError):
+    """Raised when AgentProf cannot open the DuckDB store for an expected reason."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(
+            f"Close any other AgentProf command using `{path}` and retry."
+        )
+        self.path = path
+
+
 MIGRATIONS = (
     Migration(
         version=1,
@@ -319,7 +329,12 @@ class DuckDBStore:
 
     def connect(self) -> duckdb.DuckDBPyConnection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        return duckdb.connect(str(self.path))
+        try:
+            return duckdb.connect(str(self.path))
+        except duckdb.IOException as exc:
+            if "Could not set lock" in str(exc):
+                raise StoreConnectionError(self.path) from exc
+            raise
 
     def ensure_schema(self) -> None:
         with self.connect() as connection:

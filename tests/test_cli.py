@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from agentprof.config import APP_SUBDIRS, DEFAULT_STORE_PATH
 from agentprof.cli import app
+from agentprof.store.duckdb_store import DuckDBStore, StoreConnectionError
 
 
 runner = CliRunner()
@@ -195,6 +196,22 @@ def test_store_stats_after_init() -> None:
         assert stats_result.exit_code == 0
         assert "raw_spans" in stats_result.output
         assert "normalized_traces" in stats_result.output
+
+
+def test_store_stats_reports_store_lock_without_traceback(monkeypatch) -> None:
+    def locked_stats(self: DuckDBStore) -> dict[str, int]:
+        raise StoreConnectionError(self.path)
+
+    monkeypatch.setattr(DuckDBStore, "stats", locked_stats)
+
+    with runner.isolated_filesystem():
+        init_result = runner.invoke(app, ["init"])
+        stats_result = runner.invoke(app, ["store", "stats"])
+
+        assert init_result.exit_code == 0
+        assert stats_result.exit_code == 2
+        assert "AgentProf store is locked" in stats_result.output
+        assert "Traceback" not in stats_result.output
 
 
 def test_store_reset_requires_config() -> None:
