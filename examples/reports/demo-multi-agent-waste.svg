@@ -23,7 +23,8 @@
 
   <rect x="514" y="222" width="206" height="76" rx="16" fill="#111827" stroke="#334155"/>
   <text x="534" y="251" fill="#94a3b8" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13">Agents detected</text>
-  <text x="534" y="280" fill="#f8fafc" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700">3: triage_agent, research_agent...</text>
+  <text x="534" y="276" fill="#f8fafc" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700">3 agents</text>
+  <text x="534" y="293" fill="#94a3b8" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12">triage_agent +2 more</text>
 
   <text x="40" y="330" fill="#94a3b8" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12">Basis: configurable estimate. Validate with observed project-specific single-agent baselines.</text>
 </svg>

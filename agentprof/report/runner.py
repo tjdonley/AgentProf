@@ -958,7 +958,8 @@ def _multi_agent_waste_svg(visual: dict[str, Any]) -> str:
     baseline_width = _svg_bar_width(baseline, max_cost)
     multiple = visual["cost_multiple"]
     multiple_label = f"{multiple:.2f}x" if multiple is not None else "n/a"
-    agent_label = _agent_label(visual)
+    agent_count_label = _agent_count_label(visual)
+    agent_names_label = _agent_names_label(visual)
     subtitle = (
         "Observed single-agent baseline estimate"
         if visual["baseline_basis"] == "observed"
@@ -995,7 +996,8 @@ def _multi_agent_waste_svg(visual: dict[str, Any]) -> str:
 
   <rect x="514" y="222" width="206" height="76" rx="16" fill="#111827" stroke="#334155"/>
   <text x="534" y="251" fill="#94a3b8" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13">Agents detected</text>
-  <text x="534" y="280" fill="#f8fafc" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700">{escape(agent_label)}</text>
+  <text x="534" y="276" fill="#f8fafc" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700">{escape(agent_count_label)}</text>
+  <text x="534" y="293" fill="#94a3b8" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12">{escape(agent_names_label)}</text>
 
   <text x="40" y="330" fill="#94a3b8" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12">{escape(basis_label)}</text>
 </svg>
@@ -1008,12 +1010,25 @@ def _svg_bar_width(value: Decimal, max_value: Decimal) -> int:
     return int((value / max_value) * Decimal("420"))
 
 
-def _agent_label(visual: dict[str, Any]) -> str:
+def _agent_count_label(visual: dict[str, Any]) -> str:
+    count = visual["agent_count"]
+    return f"{count} agent{'s' if count != 1 else ''}"
+
+
+def _agent_names_label(visual: dict[str, Any]) -> str:
     count = visual["agent_count"]
     names = visual["agent_names"]
-    if names:
-        return f"{count}: {', '.join(names[:2])}{'...' if len(names) > 2 else ''}"
-    return str(count)
+    if not names:
+        return ""
+    if len(names) == 1:
+        return _truncate_svg_label(names[0], max_chars=26)
+    return _truncate_svg_label(f"{names[0]} +{count - 1} more", max_chars=26)
+
+
+def _truncate_svg_label(value: str, *, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    return f"{value[: max_chars - 3]}..."
 
 
 def _markdown_text(value: Any) -> str:

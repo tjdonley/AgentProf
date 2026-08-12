@@ -176,7 +176,8 @@ def test_generate_report_writes_multi_agent_waste_svg_when_present(
     assert "$0.084000000" in svg
     assert "$0.042000000" in svg
     assert "2.00x" in svg
-    assert "3: triage_agent, research_agent..." in svg
+    assert "3 agents" in svg
+    assert "triage_agent +2 more" in svg
     assert "Basis: configurable estimate" in svg
 
 
