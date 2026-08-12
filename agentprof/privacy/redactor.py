@@ -22,18 +22,66 @@ API_KEY_RE = re.compile(
     r"(?i)\b(?:api[_-]?key|secret|token)\s*[:=]\s*['\"]?[^'\"\s,}]+"
     r"|\b(?:sk|pk|rk|key|secret)[-_][A-Za-z0-9_-]{16,}\b"
 )
+PROVIDER_CREDENTIAL_RE = re.compile(
+    r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"
+    r"|\bgh[oprsu]_[A-Za-z0-9]{20,}\b"
+    r"|\bgithub_pat_[A-Za-z0-9_]{20,}\b"
+    r"|\bAIza[0-9A-Za-z_-]{20,}\b"
+    r"|\bGOCSPX-[0-9A-Za-z_-]{20,}\b"
+    r"|\bya29\.[0-9A-Za-z_-]{20,}\b"
+    r"|\bx(?:ox[aboprs]|app)-[A-Za-z0-9-]{10,}\b"
+    r"|\bnpm_[A-Za-z0-9]{20,}\b"
+    r"|\bpypi-[A-Za-z0-9_-]{20,}\b"
+)
 SENSITIVE_MAPPING_KEYS = frozenset(
     {
+        "access_key",
+        "access_key_id",
         "access_token",
         "api_key",
         "authorization",
         "auth_token",
         "bearer_token",
+        "client_secret",
+        "cookie",
+        "credential",
+        "credentials",
+        "encryption_key",
+        "password",
+        "passwd",
+        "passphrase",
+        "private_key",
         "refresh_token",
         "secret",
+        "secret_access_key",
         "secret_key",
+        "session_cookie",
+        "set_cookie",
+        "signing_key",
         "token",
     }
+)
+SENSITIVE_MAPPING_KEY_SUFFIXES = (
+    "_access_key",
+    "_access_key_id",
+    "_access_token",
+    "_api_key",
+    "_auth_token",
+    "_bearer_token",
+    "_client_secret",
+    "_credential",
+    "_credentials",
+    "_password",
+    "_passwd",
+    "_passphrase",
+    "_private_key",
+    "_refresh_token",
+    "_secret",
+    "_secret_access_key",
+    "_secret_key",
+    "_session_cookie",
+    "_signing_key",
+    "_token",
 )
 
 
@@ -65,6 +113,7 @@ def redact_text(text: str, rules: RedactionRules = DEFAULT_REDACTION_RULES) -> s
     if rules.api_keys:
         redacted = AUTHORIZATION_RE.sub("[SECRET]", redacted)
         redacted = API_KEY_RE.sub("[SECRET]", redacted)
+        redacted = PROVIDER_CREDENTIAL_RE.sub("[SECRET]", redacted)
     if rules.emails:
         redacted = EMAIL_RE.sub("[EMAIL]", redacted)
     if rules.phone_numbers:
@@ -146,8 +195,14 @@ def _custom_label(name: str) -> str:
 
 
 def _is_sensitive_mapping_key(key: Any) -> bool:
-    normalized = str(key).strip().lower().replace("-", "_").replace(".", "_")
-    return normalized in SENSITIVE_MAPPING_KEYS
+    normalized = re.sub(
+        r"([A-Z]+)([A-Z][a-z])", r"\1_\2", str(key).strip()
+    )
+    normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", normalized)
+    normalized = re.sub(r"[^A-Za-z0-9]+", "_", normalized).strip("_").lower()
+    return normalized in SENSITIVE_MAPPING_KEYS or normalized.endswith(
+        SENSITIVE_MAPPING_KEY_SUFFIXES
+    )
 
 
 def _redact_credit_card_match(match: re.Match[str]) -> str:

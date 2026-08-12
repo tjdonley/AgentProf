@@ -120,6 +120,40 @@ def test_sanitize_preserves_raw_io_only_when_raw_io_is_enabled() -> None:
     assert payload["metadata"]["Authorization"] == "[SECRET]"
 
 
+def test_sanitize_redacts_common_credentials_from_metadata() -> None:
+    config = AgentProfConfig(privacy=PrivacyConfig(hash_inputs=False))
+    aws_access_key = "AKIA" + "A" * 16
+    github_token = "ghp_" + "a" * 36
+    slack_token = "xoxb-" + "1" * 12 + "-" + "a" * 24
+
+    payload = sanitize_observation_payload(
+        {
+            "id": "obs-1",
+            "metadata": {
+                "password": "hunter2",
+                "clientSecret": "client-secret-value",
+                "secretAccessKey": "aws-secret-value",
+                "x-api-key": "google-api-key-value",
+                "provider_tokens": [
+                    aws_access_key,
+                    github_token,
+                    slack_token,
+                ],
+            },
+        },
+        config=config,
+    )
+
+    serialized = json.dumps(payload, sort_keys=True)
+    assert payload["metadata"]["password"] == "[SECRET]"
+    assert payload["metadata"]["clientSecret"] == "[SECRET]"
+    assert payload["metadata"]["secretAccessKey"] == "[SECRET]"
+    assert payload["metadata"]["x-api-key"] == "[SECRET]"
+    assert aws_access_key not in serialized
+    assert github_token not in serialized
+    assert slack_token not in serialized
+
+
 def test_sanitize_stores_retry_fingerprints_for_hashed_io(monkeypatch) -> None:
     monkeypatch.setenv("AGENTPROF_HASH_SALT", "test-salt-value-123")
     config = AgentProfConfig()

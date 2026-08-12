@@ -48,7 +48,7 @@ def test_demo_runs_self_contained_pipeline(monkeypatch) -> None:
         assert result.exit_code == 0
         assert "Demo complete" in result.output
         assert "AgentProf found 4 issue(s)" in result.output
-        assert "$0.060000000" in result.output
+        assert "$0.054000000" in result.output
         assert "2.00x" in result.output
         assert "baseline across 3 agents" in result.output
         assert not Path(".agentprof").exists()
@@ -63,7 +63,9 @@ def test_demo_runs_self_contained_pipeline(monkeypatch) -> None:
             "retry_loop": 1,
             "spec_violation": 2,
         }
-        assert payload["summary"]["total_wasted_cost_usd"] == "0.060000000"
+        assert payload["summary"]["total_wasted_cost_usd"] == "0.054000000"
+        assert payload["summary"]["gross_wasted_cost_usd"] == "0.060000000"
+        assert payload["summary"]["overlapping_wasted_cost_usd"] == "0.006000000"
         assert "AGENTPROF_HASH_SALT" not in os.environ
 
 

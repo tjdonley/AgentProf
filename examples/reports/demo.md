@@ -11,8 +11,14 @@ Generated at: `2026-05-30T14:11:08.868496Z`
 | Evidence items | 5 |
 | Affected traces | 2 |
 | Affected spans | 3 |
-| Total wasted cost | $0.060000000 |
-| Potential savings | $0.060000000 |
+| Total wasted cost | $0.054000000 |
+| Potential savings | $0.054000000 |
+| Gross attributed waste | $0.060000000 |
+| Overlapping waste attribution | $0.006000000 |
+| Gross potential savings | $0.060000000 |
+| Overlapping potential savings | $0.006000000 |
+
+Total wasted cost and potential savings deduplicate overlapping trace/span attributions. Gross values sum all issue estimates before deduplication.
 
 ## Visuals
 
@@ -117,4 +123,3 @@ Evidence:
 | successful_span_cost | $0.052000000 | normalized_span_status |  |
 | successful_span_cost | $0.032000000 | normalized_span_status |  |
 | estimated_multi_agent_overhead | $0.042000000 | multi_agent_waste | multi_agent_waste:a7887662c9f550c6 |
-

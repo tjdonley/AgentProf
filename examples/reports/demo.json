@@ -269,7 +269,11 @@
     "issues_by_severity": {
       "medium": 4
     },
-    "total_potential_savings_usd": "0.060000000",
-    "total_wasted_cost_usd": "0.060000000"
+    "gross_potential_savings_usd": "0.060000000",
+    "gross_wasted_cost_usd": "0.060000000",
+    "overlapping_potential_savings_usd": "0.006000000",
+    "overlapping_wasted_cost_usd": "0.006000000",
+    "total_potential_savings_usd": "0.054000000",
+    "total_wasted_cost_usd": "0.054000000"
   }
 }

@@ -81,6 +81,11 @@
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 14px;
     }
+    .summary-note {
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
     .card {
       padding: 18px;
       border: 1px solid var(--line);
@@ -223,9 +228,14 @@
         <div class="card"><span>Evidence Items</span><strong>5</strong></div>
         <div class="card"><span>Affected Traces</span><strong>2</strong></div>
         <div class="card"><span>Affected Spans</span><strong>3</strong></div>
-        <div class="card"><span>Total Wasted Cost</span><strong>$0.060000000</strong></div>
-        <div class="card"><span>Potential Savings</span><strong>$0.060000000</strong></div>
+        <div class="card"><span>Total Wasted Cost</span><strong>$0.054000000</strong></div>
+        <div class="card"><span>Potential Savings</span><strong>$0.054000000</strong></div>
+        <div class="card"><span>Gross Attributed Waste</span><strong>$0.060000000</strong></div>
+        <div class="card"><span>Overlapping Waste Attribution</span><strong>$0.006000000</strong></div>
+        <div class="card"><span>Gross Potential Savings</span><strong>$0.060000000</strong></div>
+        <div class="card"><span>Overlapping Potential Savings</span><strong>$0.006000000</strong></div>
       </div>
+      <p class="summary-note">Total values deduplicate overlapping trace/span attributions. Gross values sum all issue estimates before deduplication.</p>
     </section>
 
     <section class="panel">

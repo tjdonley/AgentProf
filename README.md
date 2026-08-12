@@ -31,7 +31,7 @@ Use AgentProf when you need to:
 Expected story:
 
 ```text
-AgentProf found 4 issue(s) and $0.060000000 of estimated wasted spend.
+AgentProf found 4 issue(s) and $0.054000000 of estimated wasted spend.
 Top finding: multi-agent trace trace-multi-agent-1 cost 2.00x an estimated single-agent baseline across 3 agents.
 ```
 
@@ -416,6 +416,11 @@ Report JSON contains a machine-readable summary, issue details with evidence, an
 ## Visuals
 ![Multi-agent waste estimate](multi-agent-demo-multi-agent-waste.svg)
 ```
+
+Summary totals deduplicate analyzer attributions that point to the same underlying
+trace/span spend. The summary also includes gross and overlapping attribution
+fields so consumers can inspect how much per-issue waste was removed from the
+recoverable total.
 
 When persisted `multi_agent_waste` issues exist, `agentprof report generate` also writes `<report-id>-multi-agent-waste.svg` next to the Markdown/JSON/HTML files, embeds or links it from the Markdown and HTML reports, and records the artifact filename in `summary.artifacts.multi_agent_waste_svg`.
 
