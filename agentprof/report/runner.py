@@ -27,6 +27,7 @@ MARKDOWN_ESCAPE_RE = re.compile(r"([\\`*\[\]()!|])")
 MARKDOWN_AUTO_LINK_RE = re.compile(r"(?i)\b((?:https?|ftp)://)")
 MARKDOWN_WWW_LINK_RE = re.compile(r"(?i)\bwww\.")
 MULTI_AGENT_WASTE_KIND = "multi_agent_waste"
+TRACE_LEVEL_WASTE_COST_TYPES = frozenset({"estimated_multi_agent_overhead"})
 
 
 def generate_report(
@@ -45,6 +46,7 @@ def generate_report(
     issues = store.fetch_issues()
     evidence = store.fetch_issue_evidence()
     costs = store.fetch_cost_ledger()
+    attribution_totals = _attribution_totals(issues=issues, costs=costs)
     multi_agent_visual = _multi_agent_waste_visual(issues=issues, evidence=evidence)
     artifacts = {}
     if multi_agent_visual is not None:
@@ -54,6 +56,7 @@ def generate_report(
         issues=issues,
         evidence=evidence,
         costs=costs,
+        attribution_totals=attribution_totals,
         generated_at=generated_at,
         artifacts=artifacts,
     )
@@ -100,7 +103,7 @@ def generate_report(
         issues=len(issues),
         evidence_items=len(evidence),
         cost_entries=len(costs),
-        total_wasted_cost_usd=_sum_decimals(issue.wasted_cost_usd for issue in issues),
+        total_wasted_cost_usd=attribution_totals["total_wasted_cost_usd"],
         report_md_path=markdown_path,
         report_json_path=json_path,
         report_html_path=html_path,
@@ -112,6 +115,7 @@ def _summary(
     issues: list[IssueRecord],
     evidence: list[IssueEvidenceRecord],
     costs: list[CostLedgerRecord],
+    attribution_totals: dict[str, Decimal],
     generated_at: datetime,
     artifacts: dict[str, str],
 ) -> dict[str, Any]:
@@ -137,18 +141,146 @@ def _summary(
         "affected_span_count": len(affected_spans),
         "issues_by_kind": dict(sorted(issue_kinds.items())),
         "issues_by_severity": dict(sorted(severities.items())),
-        "total_wasted_cost_usd": _decimal_to_json(
-            _sum_decimals(issue.wasted_cost_usd for issue in issues)
-        ),
-        "total_potential_savings_usd": _decimal_to_json(
-            _sum_decimals(issue.potential_savings_usd for issue in issues)
-        ),
+        **{
+            name: _decimal_to_json(value)
+            for name, value in attribution_totals.items()
+        },
         "costs_by_type_usd": {
             cost_type: _decimal_to_json(amount)
             for cost_type, amount in sorted(cost_types.items())
         },
         "artifacts": dict(sorted(artifacts.items())),
     }
+
+
+def _attribution_totals(
+    *,
+    issues: list[IssueRecord],
+    costs: list[CostLedgerRecord],
+) -> dict[str, Decimal]:
+    """Return conservative recoverable totals plus their gross attribution sums.
+
+    Analyzer cost records identify the underlying trace/span allocation. Multiple
+    issues pointing at one span compete for the same spend, so only the largest
+    allocation is recoverable. Trace-level estimates likewise compete with the
+    sum of direct span allocations in that trace. Issues without usable cost
+    records fall back to their persisted issue totals.
+    """
+    gross_wasted = _sum_decimals(issue.wasted_cost_usd for issue in issues)
+    gross_potential = _sum_decimals(
+        issue.potential_savings_usd for issue in issues
+    )
+    issues_by_id = {issue.issue_id: issue for issue in issues}
+    covered_issue_ids: set[str] = set()
+    span_waste: dict[tuple[str, str], Decimal] = {}
+    span_potential: dict[tuple[str, str], Decimal] = {}
+    trace_waste: dict[str, Decimal] = {}
+    trace_potential: dict[str, Decimal] = {}
+    ledger_waste_by_issue = defaultdict(Decimal)
+    ledger_potential_by_issue = defaultdict(Decimal)
+
+    for record in costs:
+        issue = issues_by_id.get(record.issue_id or "")
+        if issue is None or record.amount_usd is None or record.amount_usd < 0:
+            continue
+        covered_issue_ids.add(issue.issue_id)
+        wasted = record.amount_usd
+        potential = _allocated_potential_savings(issue=issue, wasted=wasted)
+        ledger_waste_by_issue[issue.issue_id] += wasted
+        ledger_potential_by_issue[issue.issue_id] += potential
+        if record.span_id is None or record.cost_type in TRACE_LEVEL_WASTE_COST_TYPES:
+            trace_waste[record.trace_id] = max(
+                trace_waste.get(record.trace_id, Decimal("0")), wasted
+            )
+            trace_potential[record.trace_id] = max(
+                trace_potential.get(record.trace_id, Decimal("0")), potential
+            )
+            continue
+
+        allocation_key = (record.trace_id, record.span_id)
+        span_waste[allocation_key] = max(
+            span_waste.get(allocation_key, Decimal("0")), wasted
+        )
+        span_potential[allocation_key] = max(
+            span_potential.get(allocation_key, Decimal("0")), potential
+        )
+
+    span_waste_by_trace = _sum_allocations_by_trace(span_waste)
+    span_potential_by_trace = _sum_allocations_by_trace(span_potential)
+    trace_ids = (
+        set(trace_waste)
+        | set(trace_potential)
+        | set(span_waste_by_trace)
+        | set(span_potential_by_trace)
+    )
+    total_wasted = sum(
+        (
+            max(
+                trace_waste.get(trace_id, Decimal("0")),
+                span_waste_by_trace.get(trace_id, Decimal("0")),
+            )
+            for trace_id in trace_ids
+        ),
+        Decimal("0"),
+    )
+    total_potential = sum(
+        (
+            max(
+                trace_potential.get(trace_id, Decimal("0")),
+                span_potential_by_trace.get(trace_id, Decimal("0")),
+            )
+            for trace_id in trace_ids
+        ),
+        Decimal("0"),
+    )
+
+    for issue in issues:
+        issue_wasted = issue.wasted_cost_usd or Decimal("0")
+        issue_potential = issue.potential_savings_usd or Decimal("0")
+        if issue.issue_id not in covered_issue_ids:
+            total_wasted += issue_wasted
+            total_potential += issue_potential
+            continue
+        total_wasted += max(
+            issue_wasted - ledger_waste_by_issue[issue.issue_id], Decimal("0")
+        )
+        total_potential += max(
+            issue_potential - ledger_potential_by_issue[issue.issue_id], Decimal("0")
+        )
+
+    # Persisted issue totals are the upper bound if the ledger is inconsistent.
+    total_wasted = min(total_wasted, gross_wasted)
+    total_potential = min(total_potential, gross_potential)
+
+    return {
+        "total_wasted_cost_usd": total_wasted,
+        "total_potential_savings_usd": total_potential,
+        "gross_wasted_cost_usd": gross_wasted,
+        "gross_potential_savings_usd": gross_potential,
+        "overlapping_wasted_cost_usd": max(
+            gross_wasted - total_wasted, Decimal("0")
+        ),
+        "overlapping_potential_savings_usd": max(
+            gross_potential - total_potential, Decimal("0")
+        ),
+    }
+
+
+def _allocated_potential_savings(*, issue: IssueRecord, wasted: Decimal) -> Decimal:
+    issue_wasted = issue.wasted_cost_usd or Decimal("0")
+    issue_potential = issue.potential_savings_usd or Decimal("0")
+    if issue_wasted <= 0:
+        return Decimal("0")
+    return wasted * issue_potential / issue_wasted
+
+
+def _sum_allocations_by_trace(
+    allocations: dict[tuple[str, str], Decimal],
+) -> dict[str, Decimal]:
+    totals = defaultdict(Decimal)
+    for (trace_id, _span_id), amount in allocations.items():
+        totals[trace_id] += amount
+    return dict(totals)
 
 
 def _json_payload(
@@ -239,6 +371,12 @@ def _markdown_report(payload: dict[str, Any]) -> str:
         f"| Affected spans | {summary['affected_span_count']} |",
         f"| Total wasted cost | {_format_usd(summary['total_wasted_cost_usd'])} |",
         f"| Potential savings | {_format_usd(summary['total_potential_savings_usd'])} |",
+        f"| Gross attributed waste | {_format_usd(summary['gross_wasted_cost_usd'])} |",
+        f"| Overlapping waste attribution | {_format_usd(summary['overlapping_wasted_cost_usd'])} |",
+        f"| Gross potential savings | {_format_usd(summary['gross_potential_savings_usd'])} |",
+        f"| Overlapping potential savings | {_format_usd(summary['overlapping_potential_savings_usd'])} |",
+        "",
+        "Total wasted cost and potential savings deduplicate overlapping trace/span attributions. Gross values sum all issue estimates before deduplication.",
         "",
     ]
 
@@ -280,7 +418,7 @@ def _markdown_report(payload: dict[str, Any]) -> str:
             )
         lines.append("")
 
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines)
 
 
 def _markdown_issue(issue: dict[str, Any]) -> list[str]:
@@ -356,7 +494,24 @@ def _html_report(payload: dict[str, Any]) -> str:
             "Potential Savings",
             _format_usd(summary["total_potential_savings_usd"]),
         ),
+        _html_summary_card(
+            "Gross Attributed Waste",
+            _format_usd(summary["gross_wasted_cost_usd"]),
+        ),
+        _html_summary_card(
+            "Overlapping Waste Attribution",
+            _format_usd(summary["overlapping_wasted_cost_usd"]),
+        ),
+        _html_summary_card(
+            "Gross Potential Savings",
+            _format_usd(summary["gross_potential_savings_usd"]),
+        ),
+        _html_summary_card(
+            "Overlapping Potential Savings",
+            _format_usd(summary["overlapping_potential_savings_usd"]),
+        ),
         "      </div>",
+        '      <p class="summary-note">Total values deduplicate overlapping trace/span attributions. Gross values sum all issue estimates before deduplication.</p>',
         "    </section>",
     ]
 
@@ -467,6 +622,11 @@ def _html_style() -> str:
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 14px;
+    }
+    .summary-note {
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
     }
     .card {
       padding: 18px;

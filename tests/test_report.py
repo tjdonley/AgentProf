@@ -51,6 +51,14 @@ def test_generate_report_writes_markdown_json_and_store_row(tmp_path: Path) -> N
     assert payload["summary"]["issue_count"] == 1
     assert payload["summary"]["issues_by_kind"] == {"retry_loop": 1}
     assert payload["summary"]["total_wasted_cost_usd"] == "0.020000000"
+    assert payload["summary"]["total_potential_savings_usd"] == "0.020000000"
+    assert payload["summary"]["gross_wasted_cost_usd"] == "0.020000000"
+    assert payload["summary"]["gross_potential_savings_usd"] == "0.020000000"
+    assert payload["summary"]["overlapping_wasted_cost_usd"] == "0.000000000"
+    assert (
+        payload["summary"]["overlapping_potential_savings_usd"]
+        == "0.000000000"
+    )
     assert payload["issues"][0]["title"] == "Repeated failing call to refund_policy_lookup"
     assert payload["issues"][0]["evidence"][0]["span_id"] == "attempt-2"
 
@@ -65,6 +73,77 @@ def test_generate_report_writes_markdown_json_and_store_row(tmp_path: Path) -> N
     assert reports[0].report_json_path == str(result.report_json_path)
     assert reports[0].report_html_path == str(result.report_html_path)
     assert store.stats()["reports"] == 1
+
+
+def test_generate_report_deduplicates_overlapping_span_attribution(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    _seed_retry_issue(store)
+    issue = IssueRecord(
+        issue_id="spec_violation:test",
+        kind="spec_violation",
+        title="Missing required input field",
+        severity="high",
+        confidence="high",
+        first_seen=_dt("2026-04-26T10:00:02+00:00"),
+        last_seen=_dt("2026-04-26T10:00:02+00:00"),
+        affected_traces=1,
+        affected_spans=1,
+        total_cost_usd=Decimal("0.020"),
+        wasted_cost_usd=Decimal("0.020"),
+        potential_savings_usd=Decimal("0.020"),
+        recommendation="Validate tool input before calling it.",
+        recommended_tests=[],
+    )
+    evidence = IssueEvidenceRecord(
+        issue_id=issue.issue_id,
+        trace_id="trace-retry",
+        span_id="attempt-2",
+        evidence_type="spec_violation",
+        message="refund_policy_lookup omitted region.",
+        attributes={},
+    )
+    cost = CostLedgerRecord(
+        trace_id="trace-retry",
+        span_id="attempt-2",
+        issue_id=issue.issue_id,
+        cost_type="spec_violation_waste",
+        amount_usd=Decimal("0.020"),
+        attribution_method="spec_violation",
+        confidence="source",
+    )
+    store.replace_analysis_results(
+        issue_kind="spec_violation",
+        attribution_method="spec_violation",
+        issues=[issue],
+        evidence=[evidence],
+        cost_records=[cost],
+    )
+
+    result = generate_report(
+        store,
+        project="tracer",
+        output_dir=tmp_path / "reports",
+        report_id="overlap-report",
+        generated_at=_dt("2026-04-26T12:00:00+00:00"),
+    )
+    payload = json.loads(result.report_json_path.read_text(encoding="utf-8"))
+    summary = payload["summary"]
+    markdown = result.report_md_path.read_text(encoding="utf-8")
+    html = result.report_html_path.read_text(encoding="utf-8")
+
+    assert result.total_wasted_cost_usd == Decimal("0.020000000")
+    assert summary["total_wasted_cost_usd"] == "0.020000000"
+    assert summary["total_potential_savings_usd"] == "0.020000000"
+    assert summary["gross_wasted_cost_usd"] == "0.040000000"
+    assert summary["gross_potential_savings_usd"] == "0.040000000"
+    assert summary["overlapping_wasted_cost_usd"] == "0.020000000"
+    assert summary["overlapping_potential_savings_usd"] == "0.020000000"
+    assert "| Gross attributed waste | $0.040000000 |" in markdown
+    assert "| Overlapping waste attribution | $0.020000000 |" in markdown
+    assert "<span>Gross Attributed Waste</span>" in html
+    assert "<span>Overlapping Waste Attribution</span>" in html
 
 
 def test_generate_report_writes_multi_agent_waste_svg_when_present(

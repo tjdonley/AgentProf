@@ -43,11 +43,41 @@ def test_redact_text_removes_full_authorization_header() -> None:
     assert "verysecretvalue12345" not in redacted
 
 
+def test_redact_text_removes_common_provider_credentials() -> None:
+    credentials = [
+        "AKIA" + "A" * 16,
+        "ghp_" + "a" * 36,
+        "github_pat_" + "a" * 36,
+        "AIza" + "a" * 35,
+        "GOCSPX-" + "a" * 28,
+        "ya29." + "a" * 36,
+        "xoxb-" + "1" * 12 + "-" + "a" * 24,
+        "npm_" + "a" * 36,
+        "pypi-" + "a" * 36,
+    ]
+
+    redacted = redact_text(" ".join(credentials))
+
+    assert all(credential not in redacted for credential in credentials)
+    assert redacted.split() == ["[SECRET]"] * len(credentials)
+
+
 def test_redact_value_redacts_sensitive_mapping_keys() -> None:
     redacted = redact_value(
         {
             "Authorization": "Bearer verysecretvalue12345",
             "headers": {"api-key": "secret-key-value"},
+            "password": "hunter2",
+            "client_secret": "client-secret-value",
+            "secretAccessKey": "aws-secret-value",
+            "x-api-key": "google-api-key-value",
+            "access_key_id": "redact-me",
+            "AWSSecretAccessKey": "aws-prefixed-secret-value",
+            "AWSAccessKeyID": "redact-me-too",
+            "github_token": "github-secret-value",
+            "authCookie": "session-cookie-value",
+            "proxySetCookie": "response-cookie-value",
+            "kmsEncryptionKey": "encryption-key-value",
             "token_usage": 42,
         }
     )
@@ -55,6 +85,17 @@ def test_redact_value_redacts_sensitive_mapping_keys() -> None:
     assert redacted == {
         "Authorization": "[SECRET]",
         "headers": {"api-key": "[SECRET]"},
+        "password": "[SECRET]",
+        "client_secret": "[SECRET]",
+        "secretAccessKey": "[SECRET]",
+        "x-api-key": "[SECRET]",
+        "access_key_id": "[SECRET]",
+        "AWSSecretAccessKey": "[SECRET]",
+        "AWSAccessKeyID": "[SECRET]",
+        "github_token": "[SECRET]",
+        "authCookie": "[SECRET]",
+        "proxySetCookie": "[SECRET]",
+        "kmsEncryptionKey": "[SECRET]",
         "token_usage": 42,
     }
 
