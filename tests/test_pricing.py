@@ -494,22 +494,32 @@ def test_version_and_date_suffixes_still_match_their_base_model() -> None:
         assert price.model == expected, model_name
 
 
-def test_version_suffixes_accept_a_v_prefix() -> None:
+def test_numeric_releases_do_not_inherit_a_base_model_rate() -> None:
     table = build_pricing_table(
         PricingConfig(
             use_default_table=False,
             models=[
                 ModelPriceConfig(
-                    model="house-model",
-                    input_per_1m_usd=Decimal("1"),
-                    output_per_1m_usd=Decimal("2"),
-                )
+                    model="gpt-4",
+                    input_per_1m_usd=Decimal("30"),
+                    output_per_1m_usd=Decimal("60"),
+                ),
+                ModelPriceConfig(
+                    model="claude-sonnet-4",
+                    input_per_1m_usd=Decimal("3"),
+                    output_per_1m_usd=Decimal("15"),
+                ),
             ],
         )
     )
 
-    assert table.lookup("house-model-v2") is not None
-    assert table.lookup("house-model-v1.5") is not None
+    # A short numeric component marks a separately priced release, not a build
+    # of the same model: gpt-4.1 costs a fraction of gpt-4.
+    assert table.lookup("gpt-4.1") is None
+    assert table.lookup("gpt-4.1-mini") is None
+    assert table.lookup("claude-sonnet-4-5") is None
+    # A build or date stamp is still the same model.
+    assert table.lookup("gpt-4-0613") is not None
     assert table.lookup("house-model-experimental") is None
 
 
@@ -535,3 +545,33 @@ def test_spans_with_negative_tokens_are_not_reported_as_unpriced() -> None:
     assert result.estimated_spans == 0
     assert result.unpriced_models == ()
     assert updated[0].cost_usd is None
+
+
+def test_reported_estimate_matches_the_leaf_rollup(tmp_path: Path) -> None:
+    table = build_pricing_table(PricingConfig())
+    parent = _span(span_id="parent", parent_span_id=None, input_tokens=1000, output_tokens=500)
+    child = _span(span_id="child", parent_span_id="parent", input_tokens=2000, output_tokens=1000)
+
+    updated, result = apply_estimated_costs([parent, child], table)
+    trace = build_normalized_traces(updated)[0]
+
+    # Both spans are priced, but trace and ledger rollups keep leaf costs only,
+    # so the reported total has to drop the ancestor the same way.
+    assert result.estimated_spans == 2
+    assert result.estimated_cost_usd == trace.total_cost_usd
+    assert result.estimated_cost_usd == Decimal("0.000900000")
+
+
+def test_reported_estimate_matches_the_ledger_for_nested_spans(tmp_path: Path) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    spans = [
+        _span(span_id="parent", parent_span_id=None, input_tokens=1000, output_tokens=500),
+        _span(span_id="child", parent_span_id="parent", input_tokens=2000, output_tokens=1000),
+    ]
+    updated, result = apply_estimated_costs(spans, build_pricing_table(PricingConfig()))
+    store.replace_normalized(spans=updated, traces=build_normalized_traces(updated))
+
+    ledger = build_cost_ledger(store)
+
+    assert result.estimated_cost_usd == ledger.total_cost_usd
+    assert ledger.estimated_cost_usd == result.estimated_cost_usd

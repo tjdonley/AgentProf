@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -15,6 +16,10 @@ CONFIG_PRICE_SOURCE = "config"
 DEFAULT_PRICE_SOURCE = "default"
 PRICE_SOURCE_RANK = {CONFIG_PRICE_SOURCE: 0, DEFAULT_PRICE_SOURCE: 1}
 BOUNDARY_CHARS = frozenset("-_.:@/ ")
+# A dated or numbered build of the same model: `20250805`, `2024-07-18`, `001`.
+# Deliberately excludes short components such as `1` or `5`, which mark a new
+# release that is priced on its own.
+BUILD_STAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}|\d{3,}")
 
 # Published list prices in USD per million tokens, recorded on this date. They
 # drift: treat estimates built from this table as a starting point and override
@@ -194,8 +199,7 @@ def apply_estimated_costs(
         )
 
     updated: list[NormalizedSpan] = []
-    estimated_spans = 0
-    estimated_cost = Decimal("0")
+    estimated_keys: set[tuple[str, str]] = set()
     priced_models: set[str] = set()
 
     for span in spans:
@@ -216,17 +220,52 @@ def apply_estimated_costs(
                 }
             )
         )
-        estimated_spans += 1
-        estimated_cost += estimate.cost_usd
+        estimated_keys.add(_span_key(span))
         if span.model_name:
             priced_models.add(_normalize_model_name(span.model_name))
 
+    # Report what the ledger will actually carry. Trace and ledger rollups keep
+    # leaf costs only, so an estimated span with an estimated descendant is
+    # dropped there, and counting it here would overstate the import.
+    leaf_keys = _cost_leaf_keys(updated)
+    estimated_cost = sum(
+        (
+            span.cost_usd
+            for span in updated
+            if span.cost_usd is not None
+            and _span_key(span) in estimated_keys
+            and _span_key(span) in leaf_keys
+        ),
+        Decimal("0"),
+    )
+
     return updated, CostEstimationResult(
-        estimated_spans=estimated_spans,
+        estimated_spans=len(estimated_keys),
         estimated_cost_usd=estimated_cost,
         unpriced_models=_unpriced_model_names(spans, table, blocked),
         priced_models=tuple(sorted(priced_models)),
     )
+
+
+def _cost_leaf_keys(spans: Sequence[NormalizedSpan]) -> set[tuple[str, str]]:
+    """Costed spans that survive the leaf-only rollup used by cost attribution."""
+
+    by_key = {_span_key(span): span for span in spans}
+    costed = [span for span in spans if span.cost_usd is not None]
+    ancestors: set[tuple[str, str]] = set()
+    for span in costed:
+        parent_id = span.parent_span_id
+        seen: set[str] = set()
+        while (
+            parent_id
+            and (span.trace_id, parent_id) in by_key
+            and parent_id not in seen
+        ):
+            seen.add(parent_id)
+            ancestors.add((span.trace_id, parent_id))
+            parent_id = by_key[(span.trace_id, parent_id)].parent_span_id
+
+    return {_span_key(span) for span in costed if _span_key(span) not in ancestors}
 
 
 def _provider_costed_branch_keys(
@@ -326,14 +365,19 @@ def _candidate_keys(model_name: str) -> tuple[str, ...]:
 
 
 def _prefix_matches(key: str, model: str) -> bool:
-    """Match a priced model against its own release and date suffixes only.
+    """Match a priced model against its own build and date stamps only.
 
-    A prefix match exists to price `gpt-4o-mini-2024-07-18` from `gpt-4o-mini`.
-    It must not price `gpt-4o-mini` from `gpt-4o`, which is a different model
-    an order of magnitude more expensive. So the suffix has to look like a
-    version - a digit, or a `v` followed by a digit - and never a named variant
-    such as `-mini`, `-nano`, or `-turbo`. Unmatched models are reported as
-    unpriced, which asks the user for a rate instead of inventing a wrong one.
+    A prefix match exists so `gpt-4o-mini` prices `gpt-4o-mini-2024-07-18`
+    without the user configuring every dated release. Everything else is a
+    different model that happens to share a prefix, and pricing it from the
+    base rate invents a number: `gpt-4o-mini` costs a fraction of `gpt-4o`,
+    and `gpt-4.1` a fraction of `gpt-4`.
+
+    Only a date or a build number is treated as the same model. A short
+    numeric component is a release of its own - `gpt-4` to `gpt-4.1`,
+    `claude-sonnet-4` to `claude-sonnet-4-5` - and is rejected along with
+    named variants like `-mini` and `-turbo`. Rejected models surface in the
+    unpriced-model hint, which asks for a rate instead of guessing one.
     """
 
     if not key.startswith(model):
@@ -344,15 +388,7 @@ def _prefix_matches(key: str, model: str) -> bool:
         return True
     if remainder[0] not in BOUNDARY_CHARS:
         return False
-    return _is_version_suffix(remainder[1:])
-
-
-def _is_version_suffix(suffix: str) -> bool:
-    if not suffix:
-        return False
-    if suffix[0].isdigit():
-        return True
-    return suffix[0] in "vV" and len(suffix) > 1 and suffix[1].isdigit()
+    return BUILD_STAMP_RE.fullmatch(remainder[1:]) is not None
 
 
 def _normalize_model_name(model_name: str) -> str:
