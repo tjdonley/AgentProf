@@ -118,12 +118,14 @@ AgentProf complements tracing tools by profiling exported traces locally and tur
 - Store raw and normalized trace data in a local DuckDB database.
 - Normalize Langfuse observations into canonical span and trace tables.
 - Show data-quality coverage for parent links, status, costs, tokens, models, and I/O hashes.
+- Estimate span cost from token counts and model names when an export carries no provider cost fields.
 - Build an idempotent cost ledger from normalized span costs.
 - Print a status-based cost waterfall for successful, failed, and unknown span costs.
 - Detect retry loops where the same failing call repeats with the same input fingerprint and error signature.
 - Detect configured tool/spec contract violations from normalized redacted previews and error messages.
 - Estimate multi-agent orchestration overhead against configured or observed single-agent baselines.
 - Generate local Markdown, JSON, and static HTML reports from persisted issues, evidence, costs, and optional visuals.
+- Rank report issues by attributed waste and lead with a top-findings section.
 - List and show generated reports from the local store.
 
 ## Current Status
@@ -162,7 +164,7 @@ uv run agentprof report list
 uv run agentprof store stats
 ```
 
-The default fixture focuses on retry/spec behavior and does not include cost fields, so `agentprof cost ledger` will produce zero ledger entries for that sample. Use `tests/fixtures/langfuse_multi_agent_observations.json` for a costed multi-agent waste demo.
+The default fixture focuses on retry/spec behavior and carries neither cost fields nor token counts, so `agentprof cost ledger` will produce zero ledger entries for that sample. Use `tests/fixtures/langfuse_multi_agent_observations.json` for a costed multi-agent waste demo, or `tests/fixtures/langfuse_token_only_observations.json` for an export that is priced from token counts alone.
 
 The workflow creates local files only. After `agentprof report generate`, the default report artifacts are written under `.agentprof/reports/` and can be inspected with `agentprof report show`.
 
@@ -330,8 +332,46 @@ Observed mode matches costed successful single-agent traces by normalized root t
 | `agentprof report generate` | Generate Markdown, JSON, and HTML reports from persisted analysis results. |
 | `agentprof report list` | List generated reports recorded in the local store. |
 | `agentprof report show REPORT_ID` | Print a generated report's Markdown, JSON, or HTML artifact. |
+| `agentprof pricing list` | Show the model rates used to estimate cost for uncosted spans. |
 | `agentprof store stats` | Show row counts for all store tables. |
 | `agentprof store reset --yes` | Delete and recreate the local DuckDB store. |
+
+## Cost Estimation
+
+Many trace exports carry token counts and model names but no provider cost fields. Without a price, every analyzer reports $0.000000000, because waste attribution is built from span cost.
+
+AgentProf fills that gap during `agentprof normalize`: a span that has a model name and token counts but no provider cost is priced from a model rate table and stored with `cost_confidence = estimated`. Spans that already carry a provider cost are never overwritten, so estimation can only add attribution where there was none.
+
+Inspect the effective rates:
+
+```bash
+uv run agentprof pricing list
+```
+
+Override any model, or add one AgentProf does not know, in `agentprof.yml`:
+
+```yaml
+pricing:
+  enabled: true
+  use_default_table: true
+  models:
+    - model: house-fine-tune-v3
+      input_per_1m_usd: '0.90'
+      output_per_1m_usd: '2.70'
+```
+
+- Rates are USD per 1,000,000 tokens. Quote them as strings to avoid float rounding.
+- `model` matches the normalized model name exactly, or as a version-boundary prefix, so `gpt-4o-mini` prices `gpt-4o-mini-2024-07-18` while `gpt-4` never prices a `gpt-4o` span. Longer matches win, and configured entries beat bundled defaults.
+- A provider prefix such as `anthropic/claude-sonnet-4-5` is matched with and without the prefix.
+- Set `use_default_table: false` to price only from your own entries, or `enabled: false` to turn estimation off entirely.
+
+Estimated spend is always labelled rather than blended into provider-reported cost:
+
+- `agentprof normalize` reports estimated span coverage and names any model it had tokens for but no price.
+- `agentprof cost ledger` splits provider-reported cost from estimated cost.
+- Reports carry a `confidence` column per ledger row and a `costs_by_confidence_usd` summary field.
+
+The bundled rates are public list prices recorded on a fixed date, and provider pricing changes. Treat estimates as a starting point and override the models that matter to you before acting on a total.
 
 ## Spec Contracts
 
@@ -421,6 +461,13 @@ Summary totals deduplicate analyzer attributions that point to the same underlyi
 trace/span spend. The summary also includes gross and overlapping attribution
 fields so consumers can inspect how much per-issue waste was removed from the
 recoverable total.
+
+Issues are ranked by attributed waste, so the most expensive finding leads the
+report instead of whichever issue ID happened to sort first. Severity and
+confidence break ties, which is what orders findings when a trace carries no cost
+data at all. Every report opens with a `Top Findings` section covering the three
+leading issues with their recommendation and one evidence line, and the JSON
+payload exposes the same list as `top_findings` alongside `summary.top_issue_kind`.
 
 When persisted `multi_agent_waste` issues exist, `agentprof report generate` also writes `<report-id>-multi-agent-waste.svg` next to the Markdown/JSON/HTML files, embeds or links it from the Markdown and HTML reports, and records the artifact filename in `summary.artifacts.multi_agent_waste_svg`.
 

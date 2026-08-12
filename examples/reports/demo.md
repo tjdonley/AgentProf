@@ -1,7 +1,7 @@
 # AgentProf Report: AgentProf Demo
 
 Report ID: `demo`
-Generated at: `2026-05-30T14:11:08.868496Z`
+Generated at: `2026-08-12T16:26:28.684493Z`
 
 ## Summary
 
@@ -19,6 +19,20 @@ Generated at: `2026-05-30T14:11:08.868496Z`
 | Overlapping potential savings | $0.006000000 |
 
 Total wasted cost and potential savings deduplicate overlapping trace/span attributions. Gross values sum all issue estimates before deduplication.
+
+## Top Findings
+
+Ranked by attributed waste. Full details for every issue follow below.
+
+1. **Estimated orchestration overhead in triage_agent** - $0.042000000 wasted (`multi_agent_waste`, medium severity)
+   - Recommendation: Compare this multi-agent trace with a configured single-agent baseline before keeping the orchestration path.
+   - Evidence: `trace-multi-agent-1:ma-root-1` Trace used 3 distinct agents; estimated orchestration overhead uses a configured single-agent baseline ratio.
+2. **Repeated failing call to refund_policy_lookup** - $0.006000000 wasted (`retry_loop`, medium severity)
+   - Recommendation: Stop retrying deterministic failures until the input, schema, or tool precondition has changed.
+   - Evidence: `trace-demo-retry:demo-tool-retry-1` Attempt 1 failed with missing required field region.
+3. **Contract violation in refund_policy_lookup** - $0.006000000 wasted (`spec_violation`, medium severity)
+   - Recommendation: Validate tool inputs and outputs against the configured contract before continuing the agent trace.
+   - Evidence: `trace-demo-retry:demo-tool-retry-2` refund_policy_lookup violated refund_policy_lookup: missing input fields: region.
 
 ## Visuals
 
@@ -113,13 +127,13 @@ Evidence:
 
 ## Cost Ledger
 
-| Cost type | Amount | Attribution | Issue |
-| --- | ---: | --- | --- |
-| failed_span_cost | $0.006000000 | normalized_span_status |  |
-| wasted_spec_violation_cost | $0.006000000 | spec_violation | spec_violation:d62c2c3a59097026 |
-| failed_span_cost | $0.006000000 | normalized_span_status |  |
-| wasted_retry_cost | $0.006000000 | retry_loop | retry_loop:14f469d943d86373 |
-| wasted_spec_violation_cost | $0.006000000 | spec_violation | spec_violation:ae3bd3cc2b213fc6 |
-| successful_span_cost | $0.052000000 | normalized_span_status |  |
-| successful_span_cost | $0.032000000 | normalized_span_status |  |
-| estimated_multi_agent_overhead | $0.042000000 | multi_agent_waste | multi_agent_waste:a7887662c9f550c6 |
+| Cost type | Amount | Confidence | Attribution | Issue |
+| --- | ---: | --- | --- | --- |
+| failed_span_cost | $0.006000000 | source | normalized_span_status |  |
+| wasted_spec_violation_cost | $0.006000000 | source | spec_violation | spec_violation:d62c2c3a59097026 |
+| failed_span_cost | $0.006000000 | source | normalized_span_status |  |
+| wasted_retry_cost | $0.006000000 | source | retry_loop | retry_loop:14f469d943d86373 |
+| wasted_spec_violation_cost | $0.006000000 | source | spec_violation | spec_violation:ae3bd3cc2b213fc6 |
+| successful_span_cost | $0.052000000 | source | normalized_span_status |  |
+| successful_span_cost | $0.032000000 | source | normalized_span_status |  |
+| estimated_multi_agent_overhead | $0.042000000 | estimated | multi_agent_waste | multi_agent_waste:a7887662c9f550c6 |

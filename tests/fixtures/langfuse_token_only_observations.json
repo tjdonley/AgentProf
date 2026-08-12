@@ -1,0 +1,72 @@
+[
+  {
+    "id": "tok-root-1",
+    "traceId": "trace-token-only-1",
+    "parentObservationId": null,
+    "type": "SPAN",
+    "name": "support_agent",
+    "startTime": "2026-05-04T09:00:00.000Z",
+    "endTime": "2026-05-04T09:00:06.000Z",
+    "input": "Summarize the open ticket backlog.",
+    "output": "Three tickets need a reply today.",
+    "level": "DEFAULT",
+    "statusMessage": ""
+  },
+  {
+    "id": "tok-llm-summary",
+    "traceId": "trace-token-only-1",
+    "parentObservationId": "tok-root-1",
+    "type": "GENERATION",
+    "name": "summarize_backlog",
+    "startTime": "2026-05-04T09:00:01.000Z",
+    "endTime": "2026-05-04T09:00:03.000Z",
+    "model": "gpt-4o-mini",
+    "usageDetails": {
+      "input": 1000,
+      "output": 500,
+      "total": 1500
+    },
+    "input": "Summarize these tickets.",
+    "output": "Three tickets need a reply today.",
+    "level": "DEFAULT",
+    "statusMessage": ""
+  },
+  {
+    "id": "tok-llm-draft",
+    "traceId": "trace-token-only-1",
+    "parentObservationId": "tok-root-1",
+    "type": "GENERATION",
+    "name": "draft_replies",
+    "startTime": "2026-05-04T09:00:03.000Z",
+    "endTime": "2026-05-04T09:00:05.000Z",
+    "model": "claude-sonnet-4-5-20250929",
+    "usageDetails": {
+      "input": 2000,
+      "output": 1000,
+      "total": 3000
+    },
+    "input": "Draft replies for the three tickets.",
+    "output": "Drafted three replies.",
+    "level": "DEFAULT",
+    "statusMessage": ""
+  },
+  {
+    "id": "tok-llm-router",
+    "traceId": "trace-token-only-1",
+    "parentObservationId": "tok-root-1",
+    "type": "GENERATION",
+    "name": "route_request",
+    "startTime": "2026-05-04T09:00:05.000Z",
+    "endTime": "2026-05-04T09:00:06.000Z",
+    "model": "internal-router-v2",
+    "usageDetails": {
+      "input": 100,
+      "output": 50,
+      "total": 150
+    },
+    "input": "Which queue should own this?",
+    "output": "billing",
+    "level": "DEFAULT",
+    "statusMessage": ""
+  }
+]

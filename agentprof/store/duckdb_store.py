@@ -24,6 +24,27 @@ TABLES = (
     "reports",
 )
 
+SEVERITY_ORDER = ("critical", "high", "medium", "low")
+CONFIDENCE_ORDER = ("high", "medium", "low")
+
+
+def _rank_case(column: str, values: Sequence[str]) -> str:
+    whens = " ".join(
+        f"WHEN '{value}' THEN {index}" for index, value in enumerate(values)
+    )
+    return f"CASE {column} {whens} ELSE {len(values)} END"
+
+
+# Issues are ranked by attributed waste first so the most expensive finding
+# leads every report. Severity and confidence break ties, which is what ranks
+# findings when a trace carries no cost data at all. issue_id keeps it stable.
+ISSUE_RANK_ORDER_BY = (
+    "COALESCE(wasted_cost_usd, 0) DESC, "
+    f"{_rank_case('severity', SEVERITY_ORDER)}, "
+    f"{_rank_case('confidence', CONFIDENCE_ORDER)}, "
+    "issue_id"
+)
+
 
 @dataclass(frozen=True)
 class Migration:
@@ -864,7 +885,7 @@ class DuckDBStore:
         if kind:
             query += " WHERE kind = ?"
             params.append(kind)
-        query += " ORDER BY issue_id"
+        query += f" ORDER BY {ISSUE_RANK_ORDER_BY}"
 
         with self.connect() as connection:
             rows = connection.execute(query, params).fetchall()

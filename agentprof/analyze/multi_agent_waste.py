@@ -29,6 +29,8 @@ OBSERVED_EVIDENCE_BASIS = "observed_single_agent_baseline"
 AGENT_SPAN_TYPES = {"root", "agent"}
 BASELINE_MODES = {"estimated", "observed"}
 FAILURE_STATUSES = {"error", "timeout", "cancelled"}
+HIGH_SEVERITY_COST_MULTIPLE = Decimal("3")
+MEDIUM_SEVERITY_COST_MULTIPLE = Decimal("1.5")
 
 
 @dataclass(frozen=True)
@@ -299,6 +301,16 @@ def _normalized_name(value: str | None) -> str:
     return " ".join((value or "").replace("_", " ").replace("-", " ").lower().split())
 
 
+def _severity_from_finding(finding: MultiAgentWasteFinding) -> str:
+    """Severity tracks how far the orchestration ran over its baseline."""
+
+    if finding.cost_multiple >= HIGH_SEVERITY_COST_MULTIPLE:
+        return "high"
+    if finding.cost_multiple >= MEDIUM_SEVERITY_COST_MULTIPLE:
+        return "medium"
+    return "low"
+
+
 def _issue_from_finding(
     finding: MultiAgentWasteFinding, *, affected_spans: int
 ) -> IssueRecord:
@@ -307,7 +319,7 @@ def _issue_from_finding(
         issue_id=finding.issue_id,
         kind=ISSUE_KIND,
         title=f"Estimated orchestration overhead in {root_label}",
-        severity="medium",
+        severity=_severity_from_finding(finding),
         confidence=finding.confidence,
         first_seen=finding.first_seen,
         last_seen=finding.last_seen,

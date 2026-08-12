@@ -5,6 +5,8 @@ from datetime import datetime
 from decimal import Decimal
 from math import inf
 
+from agentprof.config import PricingConfig
+from agentprof.cost.pricing import apply_estimated_costs, build_pricing_table
 from agentprof.normalize.langfuse import map_langfuse_raw_span
 from agentprof.normalize.schema import (
     DataQualityMetrics,
@@ -15,9 +17,16 @@ from agentprof.normalize.schema import (
 from agentprof.store.duckdb_store import DuckDBStore, RawSpanRow
 
 
-def normalize_store(store: DuckDBStore, *, source: str | None = None) -> NormalizationResult:
+def normalize_store(
+    store: DuckDBStore,
+    *,
+    source: str | None = None,
+    pricing: PricingConfig | None = None,
+) -> NormalizationResult:
     raw_rows = store.fetch_raw_spans(source=source)
     spans = [_map_raw_span(row) for row in raw_rows if _is_supported_source(row.source)]
+    # Estimate before the trace rollup so trace totals include estimated spans.
+    spans, estimation = apply_estimated_costs(spans, build_pricing_table(pricing))
     traces = build_normalized_traces(spans)
     data_quality = compute_data_quality(spans, traces)
     store.replace_normalized(spans=spans, traces=traces)
@@ -26,6 +35,9 @@ def normalize_store(store: DuckDBStore, *, source: str | None = None) -> Normali
         normalized_spans=len(spans),
         normalized_traces=len(traces),
         data_quality=data_quality,
+        estimated_cost_spans=estimation.estimated_spans,
+        estimated_cost_usd=estimation.estimated_cost_usd,
+        unpriced_models=list(estimation.unpriced_models),
     )
 
 
@@ -92,6 +104,16 @@ def compute_data_quality(
     )
     spans_with_status = sum(1 for span in spans if span.status != "unknown")
     spans_with_cost = sum(1 for span in spans if span.cost_usd is not None)
+    spans_with_source_cost = sum(
+        1
+        for span in spans
+        if span.cost_usd is not None and span.cost_confidence == "source"
+    )
+    spans_with_estimated_cost = sum(
+        1
+        for span in spans
+        if span.cost_usd is not None and span.cost_confidence == "estimated"
+    )
     spans_with_token_counts = sum(
         1 for span in spans if any(value is not None for value in _token_values(span))
     )
@@ -105,12 +127,16 @@ def compute_data_quality(
         spans_with_valid_parent_links=valid_parent_links,
         spans_with_status=spans_with_status,
         spans_with_cost=spans_with_cost,
+        spans_with_source_cost=spans_with_source_cost,
+        spans_with_estimated_cost=spans_with_estimated_cost,
         spans_with_token_counts=spans_with_token_counts,
         spans_with_model=spans_with_model,
         spans_with_io_hashes=spans_with_io_hashes,
         parent_coverage_pct=_pct(valid_parent_links, total_spans),
         status_coverage_pct=_pct(spans_with_status, total_spans),
         cost_coverage_pct=_pct(spans_with_cost, total_spans),
+        source_cost_coverage_pct=_pct(spans_with_source_cost, total_spans),
+        estimated_cost_coverage_pct=_pct(spans_with_estimated_cost, total_spans),
         token_coverage_pct=_pct(spans_with_token_counts, total_spans),
         model_coverage_pct=_pct(spans_with_model, total_spans),
         io_hash_coverage_pct=_pct(spans_with_io_hashes, total_spans),

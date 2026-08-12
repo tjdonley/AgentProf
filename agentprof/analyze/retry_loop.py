@@ -20,6 +20,8 @@ ISSUE_KIND = "retry_loop"
 ATTRIBUTION_METHOD = "retry_loop"
 WASTED_COST_TYPE = "wasted_retry_cost"
 FAILURE_STATUSES = {"error", "timeout", "cancelled"}
+HIGH_SEVERITY_WASTED_ATTEMPTS = 4
+MEDIUM_SEVERITY_WASTED_ATTEMPTS = 2
 
 
 def analyze_retry_loops(
@@ -144,12 +146,22 @@ def _finding_from_group(
     )
 
 
+def _severity_from_finding(finding: RetryLoopFinding) -> str:
+    """Severity tracks how many times the agent repeated a known-failing call."""
+
+    if finding.wasted_attempts >= HIGH_SEVERITY_WASTED_ATTEMPTS:
+        return "high"
+    if finding.wasted_attempts >= MEDIUM_SEVERITY_WASTED_ATTEMPTS:
+        return "medium"
+    return "medium" if finding.wasted_cost_usd > 0 else "low"
+
+
 def _issue_from_finding(finding: RetryLoopFinding) -> IssueRecord:
     return IssueRecord(
         issue_id=finding.issue_id,
         kind=ISSUE_KIND,
         title=f"Repeated failing call to {finding.name}",
-        severity="medium" if finding.wasted_cost_usd > 0 else "low",
+        severity=_severity_from_finding(finding),
         confidence="high",
         first_seen=finding.first_seen,
         last_seen=finding.last_seen,
