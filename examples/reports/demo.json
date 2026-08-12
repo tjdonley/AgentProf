@@ -73,7 +73,7 @@
       "trace_id": "trace-multi-agent-1"
     }
   ],
-  "generated_at": "2026-05-30T14:11:08.868496Z",
+  "generated_at": "2026-08-12T16:39:23.702668Z",
   "issues": [
     {
       "affected_spans": 5,
@@ -259,7 +259,9 @@
       "wasted_spec_violation_cost": "0.012000000"
     },
     "evidence_count": 5,
-    "generated_at": "2026-05-30T14:11:08.868496Z",
+    "generated_at": "2026-08-12T16:39:23.702668Z",
+    "gross_potential_savings_usd": "0.060000000",
+    "gross_wasted_cost_usd": "0.060000000",
     "issue_count": 4,
     "issues_by_kind": {
       "multi_agent_waste": 1,
@@ -269,11 +271,60 @@
     "issues_by_severity": {
       "medium": 4
     },
-    "gross_potential_savings_usd": "0.060000000",
-    "gross_wasted_cost_usd": "0.060000000",
     "overlapping_potential_savings_usd": "0.006000000",
     "overlapping_wasted_cost_usd": "0.006000000",
+    "span_costs_by_confidence_usd": {
+      "source": "0.096000000"
+    },
+    "top_issue_kind": "multi_agent_waste",
     "total_potential_savings_usd": "0.054000000",
     "total_wasted_cost_usd": "0.054000000"
-  }
+  },
+  "top_findings": [
+    {
+      "confidence": "medium",
+      "evidence": {
+        "message": "Trace used 3 distinct agents; estimated orchestration overhead uses a configured single-agent baseline ratio.",
+        "span_id": "ma-root-1",
+        "trace_id": "trace-multi-agent-1"
+      },
+      "issue_id": "multi_agent_waste:a7887662c9f550c6",
+      "kind": "multi_agent_waste",
+      "potential_savings_usd": "0.042000000",
+      "recommendation": "Compare this multi-agent trace with a configured single-agent baseline before keeping the orchestration path.",
+      "severity": "medium",
+      "title": "Estimated orchestration overhead in triage_agent",
+      "wasted_cost_usd": "0.042000000"
+    },
+    {
+      "confidence": "high",
+      "evidence": {
+        "message": "Attempt 1 failed with missing required field region.",
+        "span_id": "demo-tool-retry-1",
+        "trace_id": "trace-demo-retry"
+      },
+      "issue_id": "retry_loop:14f469d943d86373",
+      "kind": "retry_loop",
+      "potential_savings_usd": "0.006000000",
+      "recommendation": "Stop retrying deterministic failures until the input, schema, or tool precondition has changed.",
+      "severity": "medium",
+      "title": "Repeated failing call to refund_policy_lookup",
+      "wasted_cost_usd": "0.006000000"
+    },
+    {
+      "confidence": "high",
+      "evidence": {
+        "message": "refund_policy_lookup violated refund_policy_lookup: missing input fields: region.",
+        "span_id": "demo-tool-retry-2",
+        "trace_id": "trace-demo-retry"
+      },
+      "issue_id": "spec_violation:ae3bd3cc2b213fc6",
+      "kind": "spec_violation",
+      "potential_savings_usd": "0.006000000",
+      "recommendation": "Validate tool inputs and outputs against the configured contract before continuing the agent trace.",
+      "severity": "medium",
+      "title": "Contract violation in refund_policy_lookup",
+      "wasted_cost_usd": "0.006000000"
+    }
+  ]
 }

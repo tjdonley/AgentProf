@@ -753,3 +753,20 @@ def _contract() -> SpecContractConfig:
 
 def _dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def test_multi_agent_severity_tracks_the_cost_multiple(tmp_path: Path) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    spans = _multi_agent_spans()
+    store.replace_normalized(spans=spans, traces=build_normalized_traces(spans))
+
+    # A 0.25 baseline ratio puts the trace at 4.00x its single-agent baseline.
+    analyze_multi_agent_waste(store, baseline_ratio=Decimal("0.25"))
+    high = store.fetch_issues(kind="multi_agent_waste")[0]
+
+    # A 0.80 baseline ratio puts the same trace at 1.25x.
+    analyze_multi_agent_waste(store, baseline_ratio=Decimal("0.80"))
+    low = store.fetch_issues(kind="multi_agent_waste")[0]
+
+    assert high.severity == "high"
+    assert low.severity == "low"

@@ -13,6 +13,7 @@ class ReportBuildResult(BaseModel):
     evidence_items: int
     cost_entries: int
     total_wasted_cost_usd: Decimal = Field(default=Decimal("0"))
+    top_finding_title: str | None = None
     report_md_path: Path
     report_json_path: Path
     report_html_path: Path

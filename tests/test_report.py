@@ -860,3 +860,214 @@ def _seed_markdown_injection_issue(store: DuckDBStore) -> None:
 
 def _dt(value: str) -> datetime:
     return datetime.fromisoformat(value).astimezone(UTC)
+
+
+def test_fetch_issues_ranks_expensive_findings_first(tmp_path: Path) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    _seed_ranked_issues(store)
+
+    issues = store.fetch_issues()
+
+    # Ordered by attributed waste, not by the issue_id hash.
+    assert [issue.issue_id for issue in issues] == [
+        "retry_loop:expensive",
+        "multi_agent_waste:cheap",
+        "spec_violation:free",
+    ]
+
+
+def test_fetch_issues_breaks_cost_ties_on_severity(tmp_path: Path) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    store.replace_analysis_results(
+        issue_kind="spec_violation",
+        attribution_method="spec_violation",
+        issues=[
+            _ranked_issue("spec_violation:aaa", "spec_violation", "low", Decimal("0")),
+            _ranked_issue("spec_violation:zzz", "spec_violation", "high", Decimal("0")),
+        ],
+        evidence=[],
+        cost_records=[],
+    )
+
+    issues = store.fetch_issues()
+
+    assert [issue.issue_id for issue in issues] == [
+        "spec_violation:zzz",
+        "spec_violation:aaa",
+    ]
+
+
+def test_generate_report_renders_ranked_top_findings(tmp_path: Path) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    _seed_ranked_issues(store)
+
+    result = generate_report(
+        store,
+        project="tracer",
+        output_dir=tmp_path / "reports",
+        report_id="ranked-report",
+        generated_at=_dt("2026-04-26T12:00:00+00:00"),
+    )
+    payload = json.loads(result.report_json_path.read_text(encoding="utf-8"))
+    markdown = result.report_md_path.read_text(encoding="utf-8")
+    html = result.report_html_path.read_text(encoding="utf-8")
+
+    assert [finding["issue_id"] for finding in payload["top_findings"]] == [
+        "retry_loop:expensive",
+        "multi_agent_waste:cheap",
+        "spec_violation:free",
+    ]
+    assert payload["summary"]["top_issue_kind"] == "retry_loop"
+    assert result.top_finding_title == "Costly retry loop"
+    assert payload["top_findings"][0]["wasted_cost_usd"] == "5.000000000"
+    assert payload["top_findings"][0]["evidence"]["span_id"] == "span-expensive"
+
+    assert "## Top Findings" in markdown
+    assert markdown.index("## Top Findings") < markdown.index("## Issues")
+    assert "Costly retry loop" in markdown
+
+    assert "<h2>Top Findings</h2>" in html
+    assert html.index("Top Findings") < html.index("<h2>Issues</h2>")
+
+
+def test_generate_report_caps_top_findings_at_three(tmp_path: Path) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    store.replace_analysis_results(
+        issue_kind="spec_violation",
+        attribution_method="spec_violation",
+        issues=[
+            _ranked_issue(
+                f"spec_violation:{index}",
+                "spec_violation",
+                "medium",
+                Decimal(index),
+            )
+            for index in range(5)
+        ],
+        evidence=[],
+        cost_records=[],
+    )
+
+    result = generate_report(
+        store,
+        project="tracer",
+        output_dir=tmp_path / "reports",
+        report_id="capped-report",
+        generated_at=_dt("2026-04-26T12:00:00+00:00"),
+    )
+    payload = json.loads(result.report_json_path.read_text(encoding="utf-8"))
+
+    assert len(payload["top_findings"]) == 3
+    assert payload["top_findings"][0]["issue_id"] == "spec_violation:4"
+
+
+def test_generate_report_omits_top_findings_when_no_issues(tmp_path: Path) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+
+    result = generate_report(
+        store,
+        project="tracer",
+        output_dir=tmp_path / "reports",
+        report_id="empty-top",
+        generated_at=_dt("2026-04-26T12:00:00+00:00"),
+    )
+    payload = json.loads(result.report_json_path.read_text(encoding="utf-8"))
+    markdown = result.report_md_path.read_text(encoding="utf-8")
+    html = result.report_html_path.read_text(encoding="utf-8")
+
+    assert payload["top_findings"] == []
+    assert payload["summary"]["top_issue_kind"] is None
+    assert result.top_finding_title is None
+    assert "## Top Findings" not in markdown
+    assert "<h2>Top Findings</h2>" not in html
+
+
+def test_report_records_cost_confidence(tmp_path: Path) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    _seed_retry_issue(store)
+    store.replace_cost_ledger(
+        [
+            CostLedgerRecord(
+                trace_id="trace-retry",
+                span_id="attempt-1",
+                issue_id=None,
+                cost_type="failed_span_cost",
+                amount_usd=Decimal("0.010"),
+                attribution_method="normalized_span_status",
+                confidence="estimated",
+            )
+        ],
+        attribution_method="normalized_span_status",
+    )
+
+    result = generate_report(
+        store,
+        project="tracer",
+        output_dir=tmp_path / "reports",
+        report_id="confidence-report",
+        generated_at=_dt("2026-04-26T12:00:00+00:00"),
+    )
+    payload = json.loads(result.report_json_path.read_text(encoding="utf-8"))
+    markdown = result.report_md_path.read_text(encoding="utf-8")
+    html = result.report_html_path.read_text(encoding="utf-8")
+
+    # Only the span ledger counts. The retry analyzer's $0.020 attribution
+    # re-points at spend the span ledger already measured, so folding it in
+    # would double count it as provider-reported.
+    assert payload["summary"]["span_costs_by_confidence_usd"] == {
+        "estimated": "0.010000000",
+    }
+    assert "| Cost type | Amount | Confidence | Attribution | Issue |" in markdown
+    assert "<th>Confidence</th>" in html
+    assert html.count("<td>estimated</td>") == 1
+
+
+def _seed_ranked_issues(store: DuckDBStore) -> None:
+    for kind, issue_id, severity, wasted in (
+        ("retry_loop", "retry_loop:expensive", "high", Decimal("5")),
+        ("multi_agent_waste", "multi_agent_waste:cheap", "medium", Decimal("0.001")),
+        ("spec_violation", "spec_violation:free", "low", Decimal("0")),
+    ):
+        issue = _ranked_issue(issue_id, kind, severity, wasted)
+        store.replace_analysis_results(
+            issue_kind=kind,
+            attribution_method=kind,
+            issues=[issue],
+            evidence=[
+                IssueEvidenceRecord(
+                    issue_id=issue_id,
+                    trace_id="trace-ranked",
+                    span_id=f"span-{issue_id.split(':')[1]}",
+                    evidence_type=kind,
+                    message=f"{kind} evidence line.",
+                    attributes={},
+                )
+            ],
+            cost_records=[],
+        )
+
+
+def _ranked_issue(
+    issue_id: str, kind: str, severity: str, wasted: Decimal
+) -> IssueRecord:
+    titles = {
+        "retry_loop:expensive": "Costly retry loop",
+        "multi_agent_waste:cheap": "Cheap orchestration overhead",
+        "spec_violation:free": "Uncosted contract violation",
+    }
+    return IssueRecord(
+        issue_id=issue_id,
+        kind=kind,
+        title=titles.get(issue_id, f"{kind} {issue_id}"),
+        severity=severity,
+        confidence="high",
+        first_seen=_dt("2026-04-26T10:00:00+00:00"),
+        last_seen=_dt("2026-04-26T10:00:02+00:00"),
+        affected_traces=1,
+        affected_spans=1,
+        total_cost_usd=wasted,
+        wasted_cost_usd=wasted,
+        potential_savings_usd=wasted,
+        recommendation=f"Fix the {kind} finding.",
+        recommended_tests=[],
+    )

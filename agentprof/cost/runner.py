@@ -31,11 +31,17 @@ def build_cost_ledger(store: DuckDBStore) -> CostLedgerBuildResult:
         records,
         attribution_method=LEDGER_ATTRIBUTION_METHOD,
     )
+    estimated = [record for record in records if record.confidence == "estimated"]
     return CostLedgerBuildResult(
         normalized_spans_seen=len(spans),
         ledger_entries=len(records),
         traces_with_cost=len({record.trace_id for record in records}),
         total_cost_usd=_sum_amounts(record.amount_usd for record in records),
+        source_cost_usd=_sum_amounts(
+            record.amount_usd for record in records if record.confidence == "source"
+        ),
+        estimated_cost_usd=_sum_amounts(record.amount_usd for record in estimated),
+        estimated_entries=len(estimated),
         waterfall=cost_waterfall(records),
     )
 

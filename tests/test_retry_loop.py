@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -318,3 +318,43 @@ def _retry_loop_spans() -> list[NormalizedSpan]:
 
 def _dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def test_retry_loop_severity_escalates_with_repeated_attempts(tmp_path: Path) -> None:
+    store = DuckDBStore(tmp_path / "agentprof.duckdb")
+    spans = [
+        NormalizedSpan(
+            trace_id="trace-severity",
+            span_id="root",
+            parent_span_id=None,
+            source="langfuse",
+            name="agent",
+            span_type="root",
+            status="error",
+        ),
+        *[
+            NormalizedSpan(
+                trace_id="trace-severity",
+                span_id=f"attempt-{index}",
+                parent_span_id="root",
+                source="langfuse",
+                name="refund_policy_lookup",
+                span_type="tool",
+                status="error",
+                status_message="missing required field region",
+                error_signature="missing required field region",
+                input_retry_fingerprint="same-input",
+                start_time=datetime(2026, 4, 26, 10, 0, index, tzinfo=UTC),
+                cost_usd=Decimal("0.001"),
+                cost_confidence="source",
+            )
+            for index in range(1, 7)
+        ],
+    ]
+    store.replace_normalized(spans=spans, traces=build_normalized_traces(spans))
+
+    result = analyze_retry_loops(store)
+    issues = store.fetch_issues(kind="retry_loop")
+
+    assert result.findings[0].wasted_attempts == 5
+    assert issues[0].severity == "high"

@@ -20,4 +20,7 @@ class CostLedgerBuildResult(BaseModel):
     ledger_entries: int
     traces_with_cost: int
     total_cost_usd: Decimal = Field(default=Decimal("0"))
+    source_cost_usd: Decimal = Field(default=Decimal("0"))
+    estimated_cost_usd: Decimal = Field(default=Decimal("0"))
+    estimated_entries: int = 0
     waterfall: list[CostWaterfallRow] = Field(default_factory=list)

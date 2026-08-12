@@ -112,6 +112,39 @@
       color: var(--muted);
       font-size: 0.92rem;
     }
+    .top-findings {
+      display: grid;
+      gap: 14px;
+      margin: 0;
+      padding-left: 20px;
+    }
+    .top-findings li {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fbfdff;
+    }
+    .top-findings li::marker {
+      color: var(--muted);
+      font-weight: 800;
+    }
+    .top-finding-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .top-finding-head h3 {
+      margin: 0;
+      font-size: 1.1rem;
+    }
+    .top-finding-head strong {
+      font-size: 1.15rem;
+      white-space: nowrap;
+    }
+    .top-findings p { margin: 10px 0 0; }
+    .top-finding-evidence { color: var(--muted); font-size: 0.93rem; }
+    .top-findings .badges { justify-content: flex-start; margin-top: 10px; }
     .issue {
       margin-top: 16px;
       padding: 20px;
@@ -217,7 +250,7 @@
       <h1>AgentProf Demo</h1>
       <dl>
         <div><dt>Report ID</dt><dd><code>demo</code></dd></div>
-        <div><dt>Generated</dt><dd><code>2026-05-30T14:11:08.868496Z</code></dd></div>
+        <div><dt>Generated</dt><dd><code>2026-08-12T16:39:23.702668Z</code></dd></div>
       </dl>
     </header>
 
@@ -236,6 +269,52 @@
         <div class="card"><span>Overlapping Potential Savings</span><strong>$0.006000000</strong></div>
       </div>
       <p class="summary-note">Total values deduplicate overlapping trace/span attributions. Gross values sum all issue estimates before deduplication.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Top Findings</h2>
+      <p class="summary-note">Ranked by attributed waste. Full details for every issue follow below.</p>
+      <ol class="top-findings">
+        <li>
+          <div class="top-finding-head">
+            <h3>Estimated orchestration overhead in triage_agent</h3>
+            <strong>$0.042000000</strong>
+          </div>
+          <div class="badges">
+            <span class="badge">multi_agent_waste</span>
+            <span class="badge">medium</span>
+            <span class="badge">medium confidence</span>
+          </div>
+          <p>Compare this multi-agent trace with a configured single-agent baseline before keeping the orchestration path.</p>
+          <p class="top-finding-evidence"><code>trace-multi-agent-1:ma-root-1</code> Trace used 3 distinct agents; estimated orchestration overhead uses a configured single-agent baseline ratio.</p>
+        </li>
+        <li>
+          <div class="top-finding-head">
+            <h3>Repeated failing call to refund_policy_lookup</h3>
+            <strong>$0.006000000</strong>
+          </div>
+          <div class="badges">
+            <span class="badge">retry_loop</span>
+            <span class="badge">medium</span>
+            <span class="badge">high confidence</span>
+          </div>
+          <p>Stop retrying deterministic failures until the input, schema, or tool precondition has changed.</p>
+          <p class="top-finding-evidence"><code>trace-demo-retry:demo-tool-retry-1</code> Attempt 1 failed with missing required field region.</p>
+        </li>
+        <li>
+          <div class="top-finding-head">
+            <h3>Contract violation in refund_policy_lookup</h3>
+            <strong>$0.006000000</strong>
+          </div>
+          <div class="badges">
+            <span class="badge">spec_violation</span>
+            <span class="badge">medium</span>
+            <span class="badge">high confidence</span>
+          </div>
+          <p>Validate tool inputs and outputs against the configured contract before continuing the agent trace.</p>
+          <p class="top-finding-evidence"><code>trace-demo-retry:demo-tool-retry-2</code> refund_policy_lookup violated refund_policy_lookup: missing input fields: region.</p>
+        </li>
+      </ol>
     </section>
 
     <section class="panel">
@@ -450,6 +529,7 @@
               <th>Cost type</th>
               <th>Trace</th>
               <th>Span</th>
+              <th>Confidence</th>
               <th>Attribution</th>
               <th>Issue</th>
               <th class="number">Amount</th>
@@ -460,6 +540,7 @@
               <td>failed_span_cost</td>
               <td><code>trace-demo-retry</code></td>
               <td><code>demo-tool-retry-1</code></td>
+              <td>source</td>
               <td>normalized_span_status</td>
               <td><code></code></td>
               <td class="number">$0.006000000</td>
@@ -468,6 +549,7 @@
               <td>wasted_spec_violation_cost</td>
               <td><code>trace-demo-retry</code></td>
               <td><code>demo-tool-retry-1</code></td>
+              <td>source</td>
               <td>spec_violation</td>
               <td><code>spec_violation:d62c2c3a59097026</code></td>
               <td class="number">$0.006000000</td>
@@ -476,6 +558,7 @@
               <td>failed_span_cost</td>
               <td><code>trace-demo-retry</code></td>
               <td><code>demo-tool-retry-2</code></td>
+              <td>source</td>
               <td>normalized_span_status</td>
               <td><code></code></td>
               <td class="number">$0.006000000</td>
@@ -484,6 +567,7 @@
               <td>wasted_retry_cost</td>
               <td><code>trace-demo-retry</code></td>
               <td><code>demo-tool-retry-2</code></td>
+              <td>source</td>
               <td>retry_loop</td>
               <td><code>retry_loop:14f469d943d86373</code></td>
               <td class="number">$0.006000000</td>
@@ -492,6 +576,7 @@
               <td>wasted_spec_violation_cost</td>
               <td><code>trace-demo-retry</code></td>
               <td><code>demo-tool-retry-2</code></td>
+              <td>source</td>
               <td>spec_violation</td>
               <td><code>spec_violation:ae3bd3cc2b213fc6</code></td>
               <td class="number">$0.006000000</td>
@@ -500,6 +585,7 @@
               <td>successful_span_cost</td>
               <td><code>trace-multi-agent-1</code></td>
               <td><code>ma-llm-policy</code></td>
+              <td>source</td>
               <td>normalized_span_status</td>
               <td><code></code></td>
               <td class="number">$0.052000000</td>
@@ -508,6 +594,7 @@
               <td>successful_span_cost</td>
               <td><code>trace-multi-agent-1</code></td>
               <td><code>ma-llm-research</code></td>
+              <td>source</td>
               <td>normalized_span_status</td>
               <td><code></code></td>
               <td class="number">$0.032000000</td>
@@ -516,6 +603,7 @@
               <td>estimated_multi_agent_overhead</td>
               <td><code>trace-multi-agent-1</code></td>
               <td><code>ma-root-1</code></td>
+              <td>estimated</td>
               <td>multi_agent_waste</td>
               <td><code>multi_agent_waste:a7887662c9f550c6</code></td>
               <td class="number">$0.042000000</td>

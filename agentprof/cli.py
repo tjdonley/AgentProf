@@ -28,6 +28,7 @@ from agentprof.config import (
     write_workspace_gitignore,
     write_default_config,
 )
+from agentprof.cost.pricing import DEFAULT_PRICE_TABLE_AS_OF, build_pricing_table
 from agentprof.cost.runner import build_cost_ledger
 from agentprof.ingest.langfuse_export import (
     LangfuseExportFormat,
@@ -69,11 +70,13 @@ import_app = typer.Typer(help="Import trace data into the local AgentProf store.
 cost_app = typer.Typer(help="Analyze normalized trace costs.")
 analyze_app = typer.Typer(help="Run deterministic analyzers over normalized traces.")
 report_app = typer.Typer(help="Generate local AgentProf reports.")
+pricing_app = typer.Typer(help="Inspect model pricing used for cost estimation.")
 app.add_typer(store_app, name="store")
 app.add_typer(import_app, name="import")
 app.add_typer(cost_app, name="cost")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(report_app, name="report")
+app.add_typer(pricing_app, name="pricing")
 
 
 def _version_callback(value: bool) -> None:
@@ -229,7 +232,7 @@ def _run_demo_pipeline(
         )
     console.print(f"  imported {import_result.observations_imported} sample observations")
 
-    normalize_store(store)
+    normalize_store(store, pricing=config.pricing)
     console.print("  normalized spans and traces")
 
     analyze_retry_loops(store)
@@ -332,13 +335,18 @@ def normalize(
 
     config = _load_config_or_exit()
     store = DuckDBStore(config.store.path)
-    result = normalize_store(store, source=source)
+    result = normalize_store(store, source=source, pricing=config.pricing)
     quality = result.data_quality
 
     console.print("[green]Normalized imported spans.[/green]")
     console.print(f"  raw spans seen: {result.raw_spans_seen}")
     console.print(f"  normalized spans: {result.normalized_spans}")
     console.print(f"  normalized traces: {result.normalized_traces}")
+    if result.estimated_cost_spans:
+        console.print(
+            f"  estimated cost for {result.estimated_cost_spans} span(s) "
+            f"without provider cost: {_format_usd(result.estimated_cost_usd)}"
+        )
 
     table = Table(title="Data quality")
     table.add_column("Metric")
@@ -346,10 +354,24 @@ def normalize(
     table.add_row("Parent coverage", f"{quality.parent_coverage_pct:.1f}%")
     table.add_row("Status coverage", f"{quality.status_coverage_pct:.1f}%")
     table.add_row("Cost coverage", f"{quality.cost_coverage_pct:.1f}%")
+    table.add_row("Cost coverage (source)", f"{quality.source_cost_coverage_pct:.1f}%")
+    table.add_row(
+        "Cost coverage (estimated)", f"{quality.estimated_cost_coverage_pct:.1f}%"
+    )
     table.add_row("Token coverage", f"{quality.token_coverage_pct:.1f}%")
     table.add_row("Model coverage", f"{quality.model_coverage_pct:.1f}%")
     table.add_row("I/O hash coverage", f"{quality.io_hash_coverage_pct:.1f}%")
     console.print(table)
+
+    if result.unpriced_models:
+        console.print(
+            "[yellow]No price configured for "
+            f"{', '.join(result.unpriced_models)}.[/yellow]"
+        )
+        console.print(
+            "  Add rates under `pricing.models` in agentprof.yml to attribute "
+            "their cost."
+        )
 
 
 @cost_app.command("ledger")
@@ -365,6 +387,11 @@ def cost_ledger() -> None:
     console.print(f"  ledger entries: {result.ledger_entries}")
     console.print(f"  traces with cost: {result.traces_with_cost}")
     console.print(f"  total cost: {_format_usd(result.total_cost_usd)}")
+    console.print(f"  provider-reported cost: {_format_usd(result.source_cost_usd)}")
+    console.print(
+        f"  estimated cost: {_format_usd(result.estimated_cost_usd)} "
+        f"across {result.estimated_entries} entry(s)"
+    )
 
     table = Table(title="Cost waterfall")
     table.add_column("Cost type")
@@ -584,6 +611,8 @@ def report_generate(
     console.print("[green]Generated AgentProf report.[/green]")
     console.print(f"  report id: {result.report_id}")
     console.print(f"  issues: {result.issues}")
+    if result.top_finding_title:
+        console.print(f"  top finding: {result.top_finding_title}")
     console.print(f"  evidence items: {result.evidence_items}")
     console.print(f"  cost entries: {result.cost_entries}")
     console.print(f"  total wasted cost: {_format_usd(result.total_wasted_cost_usd)}")
@@ -656,6 +685,46 @@ def report_show(
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=2) from exc
+
+
+@pricing_app.command("list")
+def pricing_list() -> None:
+    """Show the model prices used to estimate cost for uncosted spans."""
+
+    config = _load_config_or_exit()
+    if not config.pricing.enabled:
+        console.print(
+            "[yellow]Cost estimation is disabled (`pricing.enabled: false`).[/yellow]"
+        )
+        console.print("  Spans without provider cost fields stay unattributed.")
+        return
+
+    table_prices = build_pricing_table(config.pricing).effective_prices()
+    if not table_prices:
+        console.print("No model prices are configured.")
+        console.print(
+            "  Add rates under `pricing.models` in agentprof.yml, or set "
+            "`pricing.use_default_table: true`."
+        )
+        return
+
+    table = Table(title="Model prices (USD per 1M tokens)")
+    table.add_column("Model")
+    table.add_column("Input", justify="right")
+    table.add_column("Output", justify="right")
+    table.add_column("Source")
+    for price in sorted(table_prices, key=lambda item: (item.source, item.model)):
+        table.add_row(
+            price.model,
+            f"${price.input_per_1m_usd}",
+            f"${price.output_per_1m_usd}",
+            price.source,
+        )
+    console.print(table)
+    console.print(
+        f"  Bundled default rates were recorded on {DEFAULT_PRICE_TABLE_AS_OF}. "
+        "Verify them against your provider's current pricing."
+    )
 
 
 @store_app.command("stats")

@@ -92,12 +92,16 @@ class DataQualityMetrics(BaseModel):
     spans_with_valid_parent_links: int = 0
     spans_with_status: int = 0
     spans_with_cost: int = 0
+    spans_with_source_cost: int = 0
+    spans_with_estimated_cost: int = 0
     spans_with_token_counts: int = 0
     spans_with_model: int = 0
     spans_with_io_hashes: int = 0
     parent_coverage_pct: float = 0.0
     status_coverage_pct: float = 0.0
     cost_coverage_pct: float = 0.0
+    source_cost_coverage_pct: float = 0.0
+    estimated_cost_coverage_pct: float = 0.0
     token_coverage_pct: float = 0.0
     model_coverage_pct: float = 0.0
     io_hash_coverage_pct: float = 0.0
@@ -108,3 +112,6 @@ class NormalizationResult(BaseModel):
     normalized_spans: int
     normalized_traces: int
     data_quality: DataQualityMetrics
+    estimated_cost_spans: int = 0
+    estimated_cost_usd: Decimal = Decimal("0")
+    unpriced_models: list[str] = Field(default_factory=list)

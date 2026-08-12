@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 APP_DIR = Path(".agentprof")
@@ -42,6 +43,14 @@ sources:
 analyzers:
   spec_violations:
     contracts: []
+
+pricing:
+  # Estimated costs are only used for spans that arrive without provider cost
+  # fields. Verify rates against your provider's current pricing before you
+  # rely on estimated totals.
+  enabled: true
+  use_default_table: true
+  models: []
 
 store:
   path: .agentprof/data/agentprof.duckdb
@@ -104,6 +113,30 @@ class AnalyzersConfig(BaseModel):
     )
 
 
+class ModelPriceConfig(BaseModel):
+    """Per-million-token rates used to estimate span cost for one model."""
+
+    model: str = Field(min_length=1)
+    input_per_1m_usd: Decimal = Field(ge=0)
+    output_per_1m_usd: Decimal = Field(ge=0)
+
+    @field_validator("input_per_1m_usd", "output_per_1m_usd", mode="before")
+    @classmethod
+    def _exact_decimal(cls, value: Any) -> Any:
+        if isinstance(value, Decimal) or value is None:
+            return value
+        try:
+            return Decimal(str(value))
+        except InvalidOperation as exc:
+            raise ValueError(f"{value!r} is not a valid price") from exc
+
+
+class PricingConfig(BaseModel):
+    enabled: bool = True
+    use_default_table: bool = True
+    models: list[ModelPriceConfig] = Field(default_factory=list)
+
+
 class StoreConfig(BaseModel):
     path: Path = DEFAULT_STORE_PATH
 
@@ -113,6 +146,7 @@ class AgentProfConfig(BaseModel):
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
     analyzers: AnalyzersConfig = Field(default_factory=AnalyzersConfig)
+    pricing: PricingConfig = Field(default_factory=PricingConfig)
     store: StoreConfig = Field(default_factory=StoreConfig)
 
 

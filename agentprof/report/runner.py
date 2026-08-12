@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from agentprof.config import APP_DIR
+from agentprof.cost.runner import LEDGER_ATTRIBUTION_METHOD
 from agentprof.report.schema import ReportBuildResult
 from agentprof.store.duckdb_store import (
     CostLedgerRecord,
@@ -28,6 +29,7 @@ MARKDOWN_AUTO_LINK_RE = re.compile(r"(?i)\b((?:https?|ftp)://)")
 MARKDOWN_WWW_LINK_RE = re.compile(r"(?i)\bwww\.")
 MULTI_AGENT_WASTE_KIND = "multi_agent_waste"
 TRACE_LEVEL_WASTE_COST_TYPES = frozenset({"estimated_multi_agent_overhead"})
+TOP_FINDING_LIMIT = 3
 
 
 def generate_report(
@@ -104,6 +106,7 @@ def generate_report(
         evidence_items=len(evidence),
         cost_entries=len(costs),
         total_wasted_cost_usd=attribution_totals["total_wasted_cost_usd"],
+        top_finding_title=issues[0].title if issues else None,
         report_md_path=markdown_path,
         report_json_path=json_path,
         report_html_path=html_path,
@@ -128,9 +131,17 @@ def _summary(
     issue_kinds = Counter(issue.kind for issue in issues)
     severities = Counter(issue.severity for issue in issues)
     cost_types = defaultdict(Decimal)
+    span_cost_confidences = defaultdict(Decimal)
     for record in costs:
-        if record.amount_usd is not None:
-            cost_types[record.cost_type] += record.amount_usd
+        if record.amount_usd is None:
+            continue
+        cost_types[record.cost_type] += record.amount_usd
+        # Only the span ledger measures spend. Analyzer attributions re-point at
+        # the same spend and carry their own notion of confidence, so folding
+        # them in here would double count and blur token estimates together
+        # with analytical estimates such as multi-agent overhead.
+        if record.attribution_method == LEDGER_ATTRIBUTION_METHOD:
+            span_cost_confidences[record.confidence] += record.amount_usd
 
     return {
         "generated_at": _datetime_to_json(generated_at),
@@ -149,6 +160,11 @@ def _summary(
             cost_type: _decimal_to_json(amount)
             for cost_type, amount in sorted(cost_types.items())
         },
+        "span_costs_by_confidence_usd": {
+            confidence: _decimal_to_json(amount)
+            for confidence, amount in sorted(span_cost_confidences.items())
+        },
+        "top_issue_kind": issues[0].kind if issues else None,
         "artifacts": dict(sorted(artifacts.items())),
     }
 
@@ -297,16 +313,47 @@ def _json_payload(
     for item in evidence:
         evidence_by_issue[item.issue_id].append(item)
 
+    issue_payloads = [
+        _issue_to_json(issue, evidence_by_issue[issue.issue_id]) for issue in issues
+    ]
     return {
         "report_id": report_id,
         "project": project,
         "generated_at": _datetime_to_json(generated_at),
         "summary": summary,
-        "issues": [
-            _issue_to_json(issue, evidence_by_issue[issue.issue_id]) for issue in issues
-        ],
+        "top_findings": _top_findings(issue_payloads),
+        "issues": issue_payloads,
         "cost_ledger": [_cost_to_json(record) for record in costs],
     }
+
+
+def _top_findings(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The leading issues, already ranked by the store's issue ordering."""
+
+    return [
+        {
+            "issue_id": issue["issue_id"],
+            "kind": issue["kind"],
+            "title": issue["title"],
+            "severity": issue["severity"],
+            "confidence": issue["confidence"],
+            "wasted_cost_usd": issue["wasted_cost_usd"],
+            "potential_savings_usd": issue["potential_savings_usd"],
+            "recommendation": issue["recommendation"],
+            "evidence": _leading_evidence(issue),
+        }
+        for issue in issues[:TOP_FINDING_LIMIT]
+    ]
+
+
+def _leading_evidence(issue: dict[str, Any]) -> dict[str, Any] | None:
+    for item in issue["evidence"]:
+        return {
+            "trace_id": item["trace_id"],
+            "span_id": item["span_id"],
+            "message": item["message"],
+        }
+    return None
 
 
 def _issue_to_json(
@@ -380,6 +427,8 @@ def _markdown_report(payload: dict[str, Any]) -> str:
         "",
     ]
 
+    lines.extend(_markdown_top_findings(payload["top_findings"]))
+
     multi_agent_svg = summary.get("artifacts", {}).get("multi_agent_waste_svg")
     if multi_agent_svg:
         lines.extend(
@@ -404,8 +453,8 @@ def _markdown_report(payload: dict[str, Any]) -> str:
     else:
         lines.extend(
             [
-                "| Cost type | Amount | Attribution | Issue |",
-                "| --- | ---: | --- | --- |",
+                "| Cost type | Amount | Confidence | Attribution | Issue |",
+                "| --- | ---: | --- | --- | --- |",
             ]
         )
         for record in payload["cost_ledger"]:
@@ -413,12 +462,46 @@ def _markdown_report(payload: dict[str, Any]) -> str:
                 "| "
                 f"{_markdown_table_cell(record['cost_type'])} | "
                 f"{_format_usd(record['amount_usd'])} | "
+                f"{_markdown_table_cell(record['confidence'])} | "
                 f"{_markdown_table_cell(record['attribution_method'])} | "
                 f"{_markdown_table_cell(record['issue_id'] or '')} |"
             )
         lines.append("")
 
     return "\n".join(lines)
+
+
+def _markdown_top_findings(top_findings: list[dict[str, Any]]) -> list[str]:
+    if not top_findings:
+        return []
+
+    lines = [
+        "## Top Findings",
+        "",
+        "Ranked by attributed waste. Full details for every issue follow below.",
+        "",
+    ]
+    for position, finding in enumerate(top_findings, start=1):
+        lines.append(
+            f"{position}. **{_markdown_text(finding['title'])}** "
+            f"- {_format_usd(finding['wasted_cost_usd'])} wasted "
+            f"({_markdown_inline_code(finding['kind'])}, "
+            f"{_markdown_text(finding['severity'])} severity)"
+        )
+        lines.append(
+            f"   - Recommendation: {_markdown_text(finding['recommendation'])}"
+        )
+        evidence = finding["evidence"]
+        if evidence:
+            location = ":".join(
+                part for part in (evidence["trace_id"], evidence["span_id"]) if part
+            )
+            lines.append(
+                f"   - Evidence: {_markdown_inline_code(location or 'unknown')} "
+                f"{_markdown_text(evidence['message'])}"
+            )
+    lines.append("")
+    return lines
 
 
 def _markdown_issue(issue: dict[str, Any]) -> list[str]:
@@ -514,6 +597,8 @@ def _html_report(payload: dict[str, Any]) -> str:
         '      <p class="summary-note">Total values deduplicate overlapping trace/span attributions. Gross values sum all issue estimates before deduplication.</p>',
         "    </section>",
     ]
+
+    lines.extend(_html_top_findings(payload["top_findings"]))
 
     multi_agent_svg = summary.get("artifacts", {}).get("multi_agent_waste_svg")
     if multi_agent_svg:
@@ -654,6 +739,39 @@ def _html_style() -> str:
       color: var(--muted);
       font-size: 0.92rem;
     }
+    .top-findings {
+      display: grid;
+      gap: 14px;
+      margin: 0;
+      padding-left: 20px;
+    }
+    .top-findings li {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fbfdff;
+    }
+    .top-findings li::marker {
+      color: var(--muted);
+      font-weight: 800;
+    }
+    .top-finding-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .top-finding-head h3 {
+      margin: 0;
+      font-size: 1.1rem;
+    }
+    .top-finding-head strong {
+      font-size: 1.15rem;
+      white-space: nowrap;
+    }
+    .top-findings p { margin: 10px 0 0; }
+    .top-finding-evidence { color: var(--muted); font-size: 0.93rem; }
+    .top-findings .badges { justify-content: flex-start; margin-top: 10px; }
     .issue {
       margin-top: 16px;
       padding: 20px;
@@ -752,6 +870,50 @@ def _html_style() -> str:
     }"""
 
 
+def _html_top_findings(top_findings: list[dict[str, Any]]) -> list[str]:
+    if not top_findings:
+        return []
+
+    lines = [
+        "",
+        '    <section class="panel">',
+        "      <h2>Top Findings</h2>",
+        '      <p class="summary-note">Ranked by attributed waste. Full details for every issue follow below.</p>',
+        '      <ol class="top-findings">',
+    ]
+    for finding in top_findings:
+        lines.extend(_html_top_finding(finding))
+    lines.extend(["      </ol>", "    </section>"])
+    return lines
+
+
+def _html_top_finding(finding: dict[str, Any]) -> list[str]:
+    lines = [
+        "        <li>",
+        '          <div class="top-finding-head">',
+        f"            <h3>{_html_text(finding['title'])}</h3>",
+        f"            <strong>{_html_text(_format_usd(finding['wasted_cost_usd']))}</strong>",
+        "          </div>",
+        '          <div class="badges">',
+        f"            <span class=\"badge\">{_html_text(finding['kind'])}</span>",
+        f"            <span class=\"badge\">{_html_text(finding['severity'])}</span>",
+        f"            <span class=\"badge\">{_html_text(finding['confidence'])} confidence</span>",
+        "          </div>",
+        f"          <p>{_html_text(finding['recommendation'])}</p>",
+    ]
+    evidence = finding["evidence"]
+    if evidence:
+        location = ":".join(
+            part for part in (evidence["trace_id"], evidence["span_id"]) if part
+        )
+        lines.append(
+            f'          <p class="top-finding-evidence">{_html_code(location or "unknown")} '
+            f"{_html_text(evidence['message'])}</p>"
+        )
+    lines.append("        </li>")
+    return lines
+
+
 def _html_summary_card(label: str, value: Any) -> str:
     return (
         '        <div class="card">'
@@ -837,6 +999,7 @@ def _html_cost_ledger(records: list[dict[str, Any]]) -> list[str]:
         "              <th>Cost type</th>",
         "              <th>Trace</th>",
         "              <th>Span</th>",
+        "              <th>Confidence</th>",
         "              <th>Attribution</th>",
         "              <th>Issue</th>",
         "              <th class=\"number\">Amount</th>",
@@ -851,6 +1014,7 @@ def _html_cost_ledger(records: list[dict[str, Any]]) -> list[str]:
                 f"              <td>{_html_text(record['cost_type'])}</td>",
                 f"              <td>{_html_code(record['trace_id'])}</td>",
                 f"              <td>{_html_code(record['span_id'] or '')}</td>",
+                f"              <td>{_html_text(record['confidence'])}</td>",
                 f"              <td>{_html_text(record['attribution_method'])}</td>",
                 f"              <td>{_html_code(record['issue_id'] or '')}</td>",
                 f"              <td class=\"number\">{_format_usd(record['amount_usd'])}</td>",
