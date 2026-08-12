@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from agentprof.config import APP_DIR
+from agentprof.cost.runner import LEDGER_ATTRIBUTION_METHOD
 from agentprof.report.schema import ReportBuildResult
 from agentprof.store.duckdb_store import (
     CostLedgerRecord,
@@ -130,11 +131,17 @@ def _summary(
     issue_kinds = Counter(issue.kind for issue in issues)
     severities = Counter(issue.severity for issue in issues)
     cost_types = defaultdict(Decimal)
-    cost_confidences = defaultdict(Decimal)
+    span_cost_confidences = defaultdict(Decimal)
     for record in costs:
-        if record.amount_usd is not None:
-            cost_types[record.cost_type] += record.amount_usd
-            cost_confidences[record.confidence] += record.amount_usd
+        if record.amount_usd is None:
+            continue
+        cost_types[record.cost_type] += record.amount_usd
+        # Only the span ledger measures spend. Analyzer attributions re-point at
+        # the same spend and carry their own notion of confidence, so folding
+        # them in here would double count and blur token estimates together
+        # with analytical estimates such as multi-agent overhead.
+        if record.attribution_method == LEDGER_ATTRIBUTION_METHOD:
+            span_cost_confidences[record.confidence] += record.amount_usd
 
     return {
         "generated_at": _datetime_to_json(generated_at),
@@ -153,9 +160,9 @@ def _summary(
             cost_type: _decimal_to_json(amount)
             for cost_type, amount in sorted(cost_types.items())
         },
-        "costs_by_confidence_usd": {
+        "span_costs_by_confidence_usd": {
             confidence: _decimal_to_json(amount)
-            for confidence, amount in sorted(cost_confidences.items())
+            for confidence, amount in sorted(span_cost_confidences.items())
         },
         "top_issue_kind": issues[0].kind if issues else None,
         "artifacts": dict(sorted(artifacts.items())),

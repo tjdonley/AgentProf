@@ -369,7 +369,9 @@ Estimated spend is always labelled rather than blended into provider-reported co
 
 - `agentprof normalize` reports estimated span coverage and names any model it had tokens for but no price.
 - `agentprof cost ledger` splits provider-reported cost from estimated cost.
-- Reports carry a `confidence` column per ledger row and a `costs_by_confidence_usd` summary field.
+- Reports carry a `confidence` column per ledger row and a `span_costs_by_confidence_usd` summary field. That field covers the normalized span ledger only, because analyzer attributions re-point at spend the span ledger already measured and carry their own notion of confidence.
+
+Provider-reported spend is never displaced. A span is left alone both when it already carries a cost and when it shares a trace path with a span that does, because cost attribution counts only leaf costs: estimating a token-bearing child underneath a provider-costed parent would drop the parent's authoritative amount in favour of the estimate.
 
 The bundled rates are public list prices recorded on a fixed date, and provider pricing changes. Treat estimates as a starting point and override the models that matter to you before acting on a total.
 

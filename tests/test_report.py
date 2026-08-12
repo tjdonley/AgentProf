@@ -1011,9 +1011,11 @@ def test_report_records_cost_confidence(tmp_path: Path) -> None:
     markdown = result.report_md_path.read_text(encoding="utf-8")
     html = result.report_html_path.read_text(encoding="utf-8")
 
-    assert payload["summary"]["costs_by_confidence_usd"] == {
+    # Only the span ledger counts. The retry analyzer's $0.020 attribution
+    # re-points at spend the span ledger already measured, so folding it in
+    # would double count it as provider-reported.
+    assert payload["summary"]["span_costs_by_confidence_usd"] == {
         "estimated": "0.010000000",
-        "source": "0.020000000",
     }
     assert "| Cost type | Amount | Confidence | Attribution | Issue |" in markdown
     assert "<th>Confidence</th>" in html

@@ -1,7 +1,7 @@
 # AgentProf Report: AgentProf Demo
 
 Report ID: `demo`
-Generated at: `2026-08-12T16:26:28.684493Z`
+Generated at: `2026-08-12T16:39:23.702668Z`
 
 ## Summary
 

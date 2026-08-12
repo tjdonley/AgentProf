@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
@@ -78,6 +79,20 @@ class PricingTable:
 
     def __bool__(self) -> bool:
         return bool(self.prices)
+
+    def effective_prices(self) -> tuple[ModelPrice, ...]:
+        """The rates `lookup` can actually return, with shadowed defaults dropped."""
+
+        configured = {
+            price.model
+            for price in self.prices
+            if price.source == CONFIG_PRICE_SOURCE
+        }
+        return tuple(
+            price
+            for price in self.prices
+            if price.source == CONFIG_PRICE_SOURCE or price.model not in configured
+        )
 
     def lookup(self, model_name: str | None) -> ModelPrice | None:
         if not model_name:
@@ -170,13 +185,15 @@ def apply_estimated_costs(
 ) -> tuple[list[NormalizedSpan], CostEstimationResult]:
     """Fill in missing span costs from token counts.
 
-    Spans that already carry a provider cost are never touched, so estimation
-    can only add attribution where there was none.
+    Provider-reported spend is never displaced: a span is skipped both when it
+    already carries a cost and when it shares a trace path with a span that
+    does. See `_provider_costed_branch_keys` for why the second rule matters.
     """
 
+    blocked = _provider_costed_branch_keys(spans)
     if not table:
         return list(spans), CostEstimationResult(
-            unpriced_models=_unpriced_model_names(spans, table)
+            unpriced_models=_unpriced_model_names(spans, table, blocked)
         )
 
     updated: list[NormalizedSpan] = []
@@ -185,6 +202,10 @@ def apply_estimated_costs(
     priced_models: set[str] = set()
 
     for span in spans:
+        if _span_key(span) in blocked:
+            updated.append(span)
+            continue
+
         estimate = estimate_span_cost(span, table)
         if estimate is None:
             updated.append(span)
@@ -206,19 +227,76 @@ def apply_estimated_costs(
     return updated, CostEstimationResult(
         estimated_spans=estimated_spans,
         estimated_cost_usd=estimated_cost,
-        unpriced_models=_unpriced_model_names(spans, table),
+        unpriced_models=_unpriced_model_names(spans, table, blocked),
         priced_models=tuple(sorted(priced_models)),
     )
 
 
+def _provider_costed_branch_keys(
+    spans: Sequence[NormalizedSpan],
+) -> set[tuple[str, str]]:
+    """Spans on a trace path that already carries provider-reported cost.
+
+    Cost attribution counts only leaf costs, dropping a costed ancestor as soon
+    as a descendant carries cost. Estimating a token-bearing child underneath a
+    provider-costed parent would therefore silently swap the authoritative
+    amount for an estimate, so nothing on such a path is estimated.
+    """
+
+    by_key = {_span_key(span): span for span in spans}
+    children: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
+    for span in spans:
+        if span.parent_span_id is not None:
+            children[(span.trace_id, span.parent_span_id)].append(_span_key(span))
+
+    blocked: set[tuple[str, str]] = set()
+    for span in spans:
+        if span.cost_usd is None:
+            continue
+
+        key = _span_key(span)
+        blocked.add(key)
+
+        parent_id = span.parent_span_id
+        seen: set[str] = set()
+        while (
+            parent_id
+            and (span.trace_id, parent_id) in by_key
+            and parent_id not in seen
+        ):
+            seen.add(parent_id)
+            blocked.add((span.trace_id, parent_id))
+            parent_id = by_key[(span.trace_id, parent_id)].parent_span_id
+
+        stack = list(children.get(key, ()))
+        visited: set[tuple[str, str]] = set()
+        while stack:
+            current = stack.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            blocked.add(current)
+            stack.extend(children.get(current, ()))
+
+    return blocked
+
+
+def _span_key(span: NormalizedSpan) -> tuple[str, str]:
+    return span.trace_id, span.span_id
+
+
 def _unpriced_model_names(
-    spans: Sequence[NormalizedSpan], table: PricingTable
+    spans: Sequence[NormalizedSpan],
+    table: PricingTable,
+    blocked: set[tuple[str, str]],
 ) -> tuple[str, ...]:
     """Models that had usable token counts but no matching price."""
 
     names: set[str] = set()
     for span in spans:
         if span.cost_usd is not None or not span.model_name:
+            continue
+        if _span_key(span) in blocked:
             continue
         if (span.input_tokens or 0) <= 0 and (span.output_tokens or 0) <= 0:
             continue

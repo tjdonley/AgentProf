@@ -18,7 +18,7 @@ from agentprof.cost.pricing import (
     estimate_span_cost,
 )
 from agentprof.cost.runner import build_cost_ledger
-from agentprof.normalize.runner import normalize_store
+from agentprof.normalize.runner import build_normalized_traces, normalize_store
 from agentprof.normalize.schema import NormalizedSpan
 from agentprof.store.duckdb_store import DuckDBStore
 
@@ -303,6 +303,7 @@ def _import_token_only_fixture(store: DuckDBStore) -> None:
 def _span(
     *,
     span_id: str = "llm",
+    parent_span_id: str | None = "root",
     model_name: str | None = "gpt-4o-mini",
     input_tokens: int | None = None,
     output_tokens: int | None = None,
@@ -311,7 +312,7 @@ def _span(
     return NormalizedSpan(
         trace_id="trace",
         span_id=span_id,
-        parent_span_id="root",
+        parent_span_id=parent_span_id,
         source="langfuse",
         name="generate",
         span_type="llm",
@@ -322,3 +323,132 @@ def _span(
         cost_usd=cost_usd,
         cost_confidence="source" if cost_usd is not None else "unknown",
     )
+
+
+def test_estimation_never_displaces_a_provider_costed_ancestor() -> None:
+    table = build_pricing_table(PricingConfig())
+    parent = _span(
+        span_id="parent",
+        parent_span_id=None,
+        model_name=None,
+        cost_usd=Decimal("1.00"),
+    )
+    child = _span(span_id="child", parent_span_id="parent", input_tokens=1000, output_tokens=500)
+
+    updated, result = apply_estimated_costs([parent, child], table)
+    trace = build_normalized_traces(updated)[0]
+
+    # Cost attribution drops a costed ancestor once a descendant is costed, so
+    # estimating the child here would replace $1.00 of provider spend with an
+    # estimate two orders of magnitude smaller.
+    assert result.estimated_spans == 0
+    assert trace.total_cost_usd == Decimal("1.00")
+    assert {span.span_id: span.cost_usd for span in updated} == {
+        "parent": Decimal("1.00"),
+        "child": None,
+    }
+
+
+def test_estimation_skips_spans_above_a_provider_costed_descendant() -> None:
+    table = build_pricing_table(PricingConfig())
+    parent = _span(span_id="parent", parent_span_id=None, input_tokens=1000, output_tokens=500)
+    child = _span(
+        span_id="child",
+        parent_span_id="parent",
+        model_name=None,
+        cost_usd=Decimal("0.75"),
+    )
+
+    updated, result = apply_estimated_costs([parent, child], table)
+    trace = build_normalized_traces(updated)[0]
+
+    assert result.estimated_spans == 0
+    assert trace.total_cost_usd == Decimal("0.75")
+
+
+def test_estimation_still_prices_sibling_branches_without_provider_cost() -> None:
+    table = build_pricing_table(PricingConfig())
+    root = _span(span_id="root", parent_span_id=None, model_name=None)
+    costed = _span(
+        span_id="costed-branch",
+        parent_span_id="root",
+        model_name=None,
+        cost_usd=Decimal("0.50"),
+    )
+    uncosted = _span(
+        span_id="token-branch",
+        parent_span_id="root",
+        input_tokens=1000,
+        output_tokens=500,
+    )
+
+    updated, result = apply_estimated_costs([root, costed, uncosted], table)
+    by_id = {span.span_id: span for span in updated}
+
+    # The root is blocked because it sits above provider spend, but an
+    # uncosted sibling branch is still fair game.
+    assert result.estimated_spans == 1
+    assert by_id["token-branch"].cost_usd == Decimal("0.000450000")
+    assert by_id["root"].cost_usd is None
+    assert build_normalized_traces(updated)[0].total_cost_usd == Decimal("0.500450000")
+
+
+def test_blocked_spans_are_not_reported_as_unpriced_models() -> None:
+    table = build_pricing_table(PricingConfig())
+    parent = _span(
+        span_id="parent",
+        parent_span_id=None,
+        model_name=None,
+        cost_usd=Decimal("1.00"),
+    )
+    child = _span(
+        span_id="child",
+        parent_span_id="parent",
+        model_name="internal-router-v2",
+        input_tokens=100,
+        output_tokens=50,
+    )
+
+    _, result = apply_estimated_costs([parent, child], table)
+
+    assert result.unpriced_models == ()
+
+
+def test_effective_prices_drop_shadowed_defaults() -> None:
+    table = build_pricing_table(
+        PricingConfig(
+            models=[
+                ModelPriceConfig(
+                    model="gpt-4o-mini",
+                    input_per_1m_usd=Decimal("1"),
+                    output_per_1m_usd=Decimal("2"),
+                )
+            ]
+        )
+    )
+
+    effective = [price for price in table.effective_prices() if price.model == "gpt-4o-mini"]
+
+    assert len(effective) == 1
+    assert effective[0].source == "config"
+    # A configured entry only shadows its exact name.
+    assert any(price.model == "gpt-4o" for price in table.effective_prices())
+
+
+def test_cli_pricing_list_shows_one_row_per_overridden_model() -> None:
+    with runner.isolated_filesystem():
+        assert runner.invoke(app, ["init"]).exit_code == 0
+        Path("agentprof.yml").write_text(
+            "pricing:\n"
+            "  models:\n"
+            "    - model: gpt-4o-mini\n"
+            "      input_per_1m_usd: '9.99'\n"
+            "      output_per_1m_usd: '8.88'\n",
+            encoding="utf-8",
+        )
+        result = runner.invoke(app, ["pricing", "list"])
+
+    assert result.exit_code == 0
+    assert "9.99" in result.output
+    # The shadowed bundled rate must not appear alongside the override.
+    assert "0.15" not in result.output

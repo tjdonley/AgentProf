@@ -699,7 +699,7 @@ def pricing_list() -> None:
         console.print("  Spans without provider cost fields stay unattributed.")
         return
 
-    table_prices = build_pricing_table(config.pricing).prices
+    table_prices = build_pricing_table(config.pricing).effective_prices()
     if not table_prices:
         console.print("No model prices are configured.")
         console.print(
