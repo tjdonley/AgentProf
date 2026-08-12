@@ -69,8 +69,10 @@ SENSITIVE_MAPPING_KEY_SUFFIXES = (
     "_auth_token",
     "_bearer_token",
     "_client_secret",
+    "_cookie",
     "_credential",
     "_credentials",
+    "_encryption_key",
     "_password",
     "_passwd",
     "_passphrase",
@@ -80,6 +82,7 @@ SENSITIVE_MAPPING_KEY_SUFFIXES = (
     "_secret_access_key",
     "_secret_key",
     "_session_cookie",
+    "_set_cookie",
     "_signing_key",
     "_token",
 )

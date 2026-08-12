@@ -75,6 +75,9 @@ def test_redact_value_redacts_sensitive_mapping_keys() -> None:
             "AWSSecretAccessKey": "aws-prefixed-secret-value",
             "AWSAccessKeyID": "redact-me-too",
             "github_token": "github-secret-value",
+            "authCookie": "session-cookie-value",
+            "proxySetCookie": "response-cookie-value",
+            "kmsEncryptionKey": "encryption-key-value",
             "token_usage": 42,
         }
     )
@@ -90,6 +93,9 @@ def test_redact_value_redacts_sensitive_mapping_keys() -> None:
         "AWSSecretAccessKey": "[SECRET]",
         "AWSAccessKeyID": "[SECRET]",
         "github_token": "[SECRET]",
+        "authCookie": "[SECRET]",
+        "proxySetCookie": "[SECRET]",
+        "kmsEncryptionKey": "[SECRET]",
         "token_usage": 42,
     }
 
