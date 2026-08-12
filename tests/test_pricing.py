@@ -63,8 +63,11 @@ def test_lookup_respects_version_boundaries() -> None:
 
     # `gpt-4o` is a different model and must not inherit the `gpt-4` rate.
     assert table.lookup("gpt-4o") is None
-    assert table.lookup("gpt-4-turbo") is not None
+    # Nor is `gpt-4-turbo` a version of `gpt-4`; it is a separate model priced
+    # differently, so it stays unpriced until a rate is configured for it.
+    assert table.lookup("gpt-4-turbo") is None
     assert table.lookup("gpt-4") is not None
+    assert table.lookup("gpt-4-0613") is not None
 
 
 def test_lookup_strips_a_provider_prefix() -> None:
@@ -452,3 +455,83 @@ def test_cli_pricing_list_shows_one_row_per_overridden_model() -> None:
     assert "9.99" in result.output
     # The shadowed bundled rate must not appear alongside the override.
     assert "0.15" not in result.output
+
+
+def test_named_variants_never_inherit_a_base_model_rate() -> None:
+    table = build_pricing_table(
+        PricingConfig(
+            use_default_table=False,
+            models=[
+                ModelPriceConfig(
+                    model="gpt-4o",
+                    input_per_1m_usd=Decimal("2.50"),
+                    output_per_1m_usd=Decimal("10.00"),
+                )
+            ],
+        )
+    )
+
+    # gpt-4o-mini costs a fraction of gpt-4o. Inheriting the base rate would
+    # overstate it by more than an order of magnitude, so it stays unpriced
+    # and gets reported as a model needing a configured rate.
+    assert table.lookup("gpt-4o-mini") is None
+    assert table.lookup("gpt-4o-nano") is None
+    assert table.lookup("gpt-4o-turbo") is None
+
+
+def test_version_and_date_suffixes_still_match_their_base_model() -> None:
+    table = build_pricing_table(PricingConfig())
+
+    for model_name, expected in (
+        ("gpt-4o-mini-2024-07-18", "gpt-4o-mini"),
+        ("gpt-4o-2024-11-20", "gpt-4o"),
+        ("claude-3-5-sonnet-20241022", "claude-3-5-sonnet"),
+        ("claude-opus-4-1-20250805", "claude-opus-4-1"),
+        ("gemini-2.0-flash-001", "gemini-2.0-flash"),
+    ):
+        price = table.lookup(model_name)
+        assert price is not None, model_name
+        assert price.model == expected, model_name
+
+
+def test_version_suffixes_accept_a_v_prefix() -> None:
+    table = build_pricing_table(
+        PricingConfig(
+            use_default_table=False,
+            models=[
+                ModelPriceConfig(
+                    model="house-model",
+                    input_per_1m_usd=Decimal("1"),
+                    output_per_1m_usd=Decimal("2"),
+                )
+            ],
+        )
+    )
+
+    assert table.lookup("house-model-v2") is not None
+    assert table.lookup("house-model-v1.5") is not None
+    assert table.lookup("house-model-experimental") is None
+
+
+def test_negative_token_counts_are_never_priced() -> None:
+    table = build_pricing_table(PricingConfig())
+
+    # A negative count subtracts from the other component and can drive a span
+    # below zero, which would understate spend and distort issue ranking.
+    assert estimate_span_cost(_span(input_tokens=-1000, output_tokens=500), table) is None
+    assert estimate_span_cost(_span(input_tokens=-100000, output_tokens=10), table) is None
+    assert estimate_span_cost(_span(input_tokens=1000, output_tokens=-500), table) is None
+    assert estimate_span_cost(_span(input_tokens=-1, output_tokens=-1), table) is None
+
+
+def test_spans_with_negative_tokens_are_not_reported_as_unpriced() -> None:
+    table = build_pricing_table(PricingConfig())
+    span = _span(model_name="internal-router-v2", input_tokens=-100, output_tokens=50)
+
+    updated, result = apply_estimated_costs([span], table)
+
+    # The usage record is unusable, so this is not a missing-rate problem and
+    # must not send the user off to configure one.
+    assert result.estimated_spans == 0
+    assert result.unpriced_models == ()
+    assert updated[0].cost_usd is None

@@ -158,14 +158,11 @@ def estimate_span_cost(
 ) -> SpanCostEstimate | None:
     """Price one span from its token counts, or return None if it can't be priced."""
 
-    if span.cost_usd is not None:
+    if span.cost_usd is not None or not _has_usable_tokens(span):
         return None
 
     input_tokens = span.input_tokens or 0
     output_tokens = span.output_tokens or 0
-    if input_tokens <= 0 and output_tokens <= 0:
-        return None
-
     price = table.lookup(span.model_name)
     if price is None:
         return None
@@ -285,6 +282,22 @@ def _span_key(span: NormalizedSpan) -> tuple[str, str]:
     return span.trace_id, span.span_id
 
 
+def _has_usable_tokens(span: NormalizedSpan) -> bool:
+    """Whether token counts can price this span.
+
+    Nothing constrains the sign of imported token counts, and a negative count
+    on one component subtracts from the other, which can understate a span or
+    drive its cost below zero. A negative count means the usage record is
+    unusable, not cheap, so the span is left unpriced.
+    """
+
+    input_tokens = span.input_tokens or 0
+    output_tokens = span.output_tokens or 0
+    if input_tokens < 0 or output_tokens < 0:
+        return False
+    return input_tokens > 0 or output_tokens > 0
+
+
 def _unpriced_model_names(
     spans: Sequence[NormalizedSpan],
     table: PricingTable,
@@ -296,9 +309,7 @@ def _unpriced_model_names(
     for span in spans:
         if span.cost_usd is not None or not span.model_name:
             continue
-        if _span_key(span) in blocked:
-            continue
-        if (span.input_tokens or 0) <= 0 and (span.output_tokens or 0) <= 0:
+        if _span_key(span) in blocked or not _has_usable_tokens(span):
             continue
         if table.lookup(span.model_name) is None:
             names.add(_normalize_model_name(span.model_name))
@@ -315,12 +326,33 @@ def _candidate_keys(model_name: str) -> tuple[str, ...]:
 
 
 def _prefix_matches(key: str, model: str) -> bool:
-    """Match on a version-boundary so `gpt-4` never prices a `gpt-4o` span."""
+    """Match a priced model against its own release and date suffixes only.
+
+    A prefix match exists to price `gpt-4o-mini-2024-07-18` from `gpt-4o-mini`.
+    It must not price `gpt-4o-mini` from `gpt-4o`, which is a different model
+    an order of magnitude more expensive. So the suffix has to look like a
+    version - a digit, or a `v` followed by a digit - and never a named variant
+    such as `-mini`, `-nano`, or `-turbo`. Unmatched models are reported as
+    unpriced, which asks the user for a rate instead of inventing a wrong one.
+    """
 
     if not key.startswith(model):
         return False
+
     remainder = key[len(model) :]
-    return not remainder or remainder[0] in BOUNDARY_CHARS
+    if not remainder:
+        return True
+    if remainder[0] not in BOUNDARY_CHARS:
+        return False
+    return _is_version_suffix(remainder[1:])
+
+
+def _is_version_suffix(suffix: str) -> bool:
+    if not suffix:
+        return False
+    if suffix[0].isdigit():
+        return True
+    return suffix[0] in "vV" and len(suffix) > 1 and suffix[1].isdigit()
 
 
 def _normalize_model_name(model_name: str) -> str:

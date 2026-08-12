@@ -361,7 +361,9 @@ pricing:
 ```
 
 - Rates are USD per 1,000,000 tokens. Quote them as strings to avoid float rounding.
-- `model` matches the normalized model name exactly, or as a version-boundary prefix, so `gpt-4o-mini` prices `gpt-4o-mini-2024-07-18` while `gpt-4` never prices a `gpt-4o` span. Longer matches win, and configured entries beat bundled defaults.
+- `model` matches the normalized model name exactly, or as a prefix followed by a version or date suffix, so `gpt-4o-mini` prices `gpt-4o-mini-2024-07-18` and `claude-opus-4-1` prices `claude-opus-4-1-20250805`. Longer matches win, and configured entries beat bundled defaults.
+- A named variant never inherits a base model's rate: `gpt-4o` does not price a `gpt-4o-mini` span, and `gpt-4` does not price `gpt-4o` or `gpt-4-turbo`. Those models are reported as unpriced instead, so a missing rate shows up as a prompt to configure one rather than as a wrong number.
+- Spans with a negative token count are left unpriced, since a negative component would subtract from the other and can drive a cost below zero.
 - A provider prefix such as `anthropic/claude-sonnet-4-5` is matched with and without the prefix.
 - Set `use_default_table: false` to price only from your own entries, or `enabled: false` to turn estimation off entirely.
 
